@@ -1,0 +1,16 @@
+{
+  "name": "breakout-midi",
+  "version": "0.1.0",
+  "description": "Physics-based MIDI trigger plugin",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "dependencies": {
+    "midi": "^2.0.0",
+    "ws": "^8.0.0"
+  },
+  "devDependencies": {
+    "electron": "^30.0.0"
+  }
+}
