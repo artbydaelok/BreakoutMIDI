@@ -196,6 +196,46 @@
     <label>Color</label>
     <input type="color" id="ed-color" value="#4a6fa5">
   </div>
+
+  <!-- Shape selector -->
+  <div id="ed-shape-section">
+    <div class="mode-row" id="ed-shape-btns">
+      <button class="mode-btn active" data-shape="rect">Rect</button>
+      <button class="mode-btn" data-shape="circle">Circle</button>
+      <button class="mode-btn" data-shape="polygon">Polygon</button>
+    </div>
+    <div id="ed-rect-params">
+      <div class="editor-row">
+        <label>Width</label>
+        <input type="range" id="ed-shape-w" min="10" max="200" value="72" step="1">
+        <span class="val" id="ed-shape-w-val">72</span>
+      </div>
+      <div class="editor-row">
+        <label>Height</label>
+        <input type="range" id="ed-shape-h" min="10" max="200" value="22" step="1">
+        <span class="val" id="ed-shape-h-val">22</span>
+      </div>
+    </div>
+    <div id="ed-circle-params" style="display:none">
+      <div class="editor-row">
+        <label>Radius</label>
+        <input type="range" id="ed-shape-r" min="6" max="80" value="20" step="1">
+        <span class="val" id="ed-shape-r-val">20</span>
+      </div>
+    </div>
+    <div id="ed-polygon-params" style="display:none">
+      <div class="editor-row">
+        <label>Sides</label>
+        <input type="range" id="ed-shape-sides" min="3" max="8" value="6" step="1">
+        <span class="val" id="ed-shape-sides-val">6</span>
+      </div>
+      <div class="editor-row">
+        <label>Size</label>
+        <input type="range" id="ed-shape-size" min="10" max="80" value="28" step="1">
+        <span class="val" id="ed-shape-size-val">28</span>
+      </div>
+    </div>
+  </div>
   <div class="editor-row">
     <label>Velocity Lock</label>
     <input type="range" id="ed-vel-lock" min="0" max="127" value="0" step="1">
@@ -233,11 +273,12 @@ function weightedRandom(slots) {
   return en[en.length-1]
 }
 
+function defaultShape() { return {shape:'rect',shapeW:72,shapeH:22,shapeR:20,shapeSides:6,shapeSize:28} }
 let noteSlots = [
-  {id:1,note:60,prob:60,color:'#4a9af5',enabled:true,velLock:0,durability:1},
-  {id:2,note:64,prob:50,color:'#f5a44a',enabled:true,velLock:0,durability:1},
-  {id:3,note:67,prob:40,color:'#a44af5',enabled:true,velLock:0,durability:1},
-  {id:4,note:72,prob:30,color:'#f54a4a',enabled:true,velLock:0,durability:1},
+  {id:1,note:60,prob:60,color:'#4a9af5',enabled:true,velLock:0,durability:1,...defaultShape()},
+  {id:2,note:64,prob:50,color:'#f5a44a',enabled:true,velLock:0,durability:1,...defaultShape()},
+  {id:3,note:67,prob:40,color:'#a44af5',enabled:true,velLock:0,durability:1,...defaultShape()},
+  {id:4,note:72,prob:30,color:'#f54a4a',enabled:true,velLock:0,durability:1,...defaultShape()},
 ]
 let nextSlotId = 5
 
@@ -271,16 +312,49 @@ function makeBall() {
   return {x:canvas.width/2+(Math.random()-.5)*80,y:canvas.height/2+(Math.random()-.5)*80,vx:Math.cos(a)*params.ballSpeed,vy:Math.sin(a)*params.ballSpeed,r:BALL_R,trail:[]}
 }
 
+function makeBrick(slot, cx, cy) {
+  const dur = slot.durability || 1
+  const base = {slot, flash:0, alive:true, hitsLeft:dur}
+  const shape = slot.shape || 'rect'
+  if (shape === 'circle') {
+    const r = slot.shapeR || 20
+    return {...base, shape:'circle', cx, cy, r, cracks:genCracks(cx-r,cy-r,r*2,r*2,dur)}
+  }
+  if (shape === 'polygon') {
+    const sides = slot.shapeSides || 6
+    const size  = slot.shapeSize  || 28
+    const verts = []
+    for (let i=0;i<sides;i++) {
+      const a = (i/sides)*Math.PI*2 - Math.PI/2
+      verts.push({x: Math.cos(a)*size, y: Math.sin(a)*size})
+    }
+    return {...base, shape:'polygon', cx, cy, vertices:verts, size, cracks:genCracks(cx-size,cy-size,size*2,size*2,dur)}
+  }
+  // rect (default)
+  const w = slot.shapeW || BRICK_W, h = slot.shapeH || BRICK_H
+  const x = cx - w/2, y = cy - h/2
+  return {...base, shape:'rect', x, y, w, h, cx, cy, cracks:genCracks(x,y,w,h,dur)}
+}
+
+function brickBounds(slot) {
+  // returns approx half-size for overlap checking
+  const shape = slot.shape || 'rect'
+  if (shape === 'circle')  return slot.shapeR || 20
+  if (shape === 'polygon') return slot.shapeSize || 28
+  return Math.max((slot.shapeW||BRICK_W), (slot.shapeH||BRICK_H)) / 2
+}
+
 function spawnBrick() {
   if (bricks.length>=params.maxBricks) return
   const slot=weightedRandom(noteSlots); if(!slot) return
-  const cols=Math.floor((canvas.width-BRICK_PAD)/(BRICK_W+BRICK_PAD))
-  const col=Math.floor(Math.random()*cols)
-  const x=BRICK_PAD+col*(BRICK_W+BRICK_PAD)
-  const rows=Math.floor((canvas.height*.75)/(BRICK_H+BRICK_PAD))
-  const y=BRICK_PAD+Math.floor(Math.random()*rows)*(BRICK_H+BRICK_PAD)
-  if (bricks.some(b=>Math.abs(b.x-x)<BRICK_W+BRICK_PAD&&Math.abs(b.y-y)<BRICK_H+BRICK_PAD)) return
-  bricks.push({x,y,w:BRICK_W,h:BRICK_H,slot,flash:0,alive:true,hitsLeft:slot.durability||1,cracks:genCracks(x,y,BRICK_W,BRICK_H,slot.durability||1)})
+  const pad = brickBounds(slot) + BRICK_PAD
+  const cx = pad + Math.random() * (canvas.width  - pad*2)
+  const cy = pad + Math.random() * (canvas.height * 0.75 - pad*2)
+  if (bricks.some(b=>{
+    const bx=b.cx??b.x+b.w/2, by=b.cy??b.y+b.h/2
+    return Math.hypot(cx-bx,cy-by) < pad + brickBounds(b.slot)
+  })) return
+  bricks.push(makeBrick(slot, cx, cy))
 }
 
 // Held note pool — notes added while held, removed on release
@@ -327,8 +401,9 @@ function spawnBrickFromMidi(note, vel) {
   const x    = BRICK_PAD + col * (BRICK_W + BRICK_PAD)
   const rows = Math.floor((canvas.height * .75) / (BRICK_H + BRICK_PAD))
   const y    = BRICK_PAD + Math.floor(Math.random() * rows) * (BRICK_H + BRICK_PAD)
-  if (bricks.some(b => Math.abs(b.x-x)<BRICK_W+BRICK_PAD && Math.abs(b.y-y)<BRICK_H+BRICK_PAD)) return
-  bricks.push({ x, y, w:BRICK_W, h:BRICK_H, slot, flash:0, alive:true, hitsLeft:slot.durability||1, cracks:genCracks(x,y,BRICK_W,BRICK_H,slot.durability||1) })
+  const pad = brickBounds(slot) + BRICK_PAD
+  if (bricks.some(b=>{const bx=b.cx??b.x+b.w/2,by=b.cy??b.y+b.h/2;return Math.hypot(x-bx,y-by)<pad+brickBounds(b.slot)})) return
+  bricks.push(makeBrick(slot, x, y))
 }
 
 function resetSim() { balls=[]; bricks=[]; spawnTimer=0; for(let i=0;i<params.numBalls;i++) balls.push(makeBall()) }
@@ -368,24 +443,70 @@ function genCracks(bx, by, bw, bh, durability) {
   return cracks
 }
 
-function ballBrickCollision(ball,brick) {
-  const cx=clamp(ball.x,brick.x,brick.x+brick.w), cy=clamp(ball.y,brick.y,brick.y+brick.h)
-  const dx=ball.x-cx, dy=ball.y-cy
-  if (dx*dx+dy*dy>=ball.r*ball.r) return false
+function resolveHit(ball, brick, nx, ny, pen) {
+  ball.x+=nx*pen; ball.y+=ny*pen
+  const dot=ball.vx*nx+ball.vy*ny
+  if(dot<0){ball.vx-=2*dot*nx; ball.vy-=2*dot*ny}
   const spd=Math.sqrt(ball.vx*ball.vx+ball.vy*ball.vy)
-  const oL=(ball.x+ball.r)-brick.x, oR=(brick.x+brick.w)-(ball.x-ball.r)
-  const oT=(ball.y+ball.r)-brick.y, oB=(brick.y+brick.h)-(ball.y-ball.r)
-  const m=Math.min(oL,oR,oT,oB)
-  if      (m===oL){ball.vx=-Math.abs(ball.vx);ball.x=brick.x-ball.r}
-  else if (m===oR){ball.vx=Math.abs(ball.vx);ball.x=brick.x+brick.w+ball.r}
-  else if (m===oT){ball.vy=-Math.abs(ball.vy);ball.y=brick.y-ball.r}
-  else            {ball.vy=Math.abs(ball.vy);ball.y=brick.y+brick.h+ball.r}
-  const s2=Math.sqrt(ball.vx*ball.vx+ball.vy*ball.vy)
-  if(s2>0){ball.vx=ball.vx/s2*params.ballSpeed;ball.vy=ball.vy/s2*params.ballSpeed}
-  brick.hitsLeft = (brick.hitsLeft || 1) - 1
-  brick.flash = 12
-  if (brick.hitsLeft <= 0) brick.alive = false
+  if(spd>0){ball.vx=ball.vx/spd*params.ballSpeed;ball.vy=ball.vy/spd*params.ballSpeed}
+  brick.hitsLeft=(brick.hitsLeft||1)-1
+  brick.flash=12
+  if(brick.hitsLeft<=0) brick.alive=false
   triggerNote(brick.slot, spd)
+}
+
+function ballBrickCollision(ball, brick) {
+  if (brick.shape==='circle') {
+    const dx=ball.x-brick.cx, dy=ball.y-brick.cy
+    const dist=Math.sqrt(dx*dx+dy*dy)
+    const minD=ball.r+brick.r
+    if(dist>=minD) return false
+    const nx=dist>0?dx/dist:0, ny=dist>0?dy/dist:1
+    resolveHit(ball,brick,nx,ny,minD-dist)
+    return true
+  }
+
+  if (brick.shape==='polygon') {
+    const verts=brick.vertices, n=verts.length
+    let minPen=Infinity, bestNx=0, bestNy=1
+    // SAT on edge normals
+    for(let i=0;i<n;i++){
+      const a=verts[i],b=verts[(i+1)%n]
+      const ex=b.x-a.x,ey=b.y-a.y,len=Math.sqrt(ex*ex+ey*ey)||1
+      const nx=ey/len,ny=-ex/len
+      const proj=(ball.x-brick.cx)*nx+(ball.y-brick.cy)*ny
+      let maxP=-Infinity
+      for(const v of verts) maxP=Math.max(maxP,v.x*nx+v.y*ny)
+      const pen=maxP+ball.r-proj
+      if(pen<=0) return false
+      if(pen<minPen){minPen=pen;bestNx=nx;bestNy=ny}
+    }
+    // SAT on vertex-to-ball axes
+    for(const v of verts){
+      const dx=(ball.x-brick.cx)-v.x,dy=(ball.y-brick.cy)-v.y
+      const d=Math.sqrt(dx*dx+dy*dy)||1
+      const nx=dx/d,ny=dy/d
+      const proj=(ball.x-brick.cx)*nx+(ball.y-brick.cy)*ny
+      let maxP=-Infinity
+      for(const vv of verts) maxP=Math.max(maxP,vv.x*nx+vv.y*ny)
+      const pen=maxP+ball.r-proj
+      if(pen<=0) return false
+      if(pen<minPen){minPen=pen;bestNx=nx;bestNy=ny}
+    }
+    resolveHit(ball,brick,bestNx,bestNy,minPen)
+    return true
+  }
+
+  // rect (default)
+  const cpx=clamp(ball.x,brick.x,brick.x+brick.w),cpy=clamp(ball.y,brick.y,brick.y+brick.h)
+  const dx=ball.x-cpx,dy=ball.y-cpy
+  if(dx*dx+dy*dy>=ball.r*ball.r) return false
+  const oL=(ball.x+ball.r)-brick.x,oR=(brick.x+brick.w)-(ball.x-ball.r)
+  const oT=(ball.y+ball.r)-brick.y,oB=(brick.y+brick.h)-(ball.y-ball.r)
+  const m=Math.min(oL,oR,oT,oB)
+  let nx=0,ny=0
+  if(m===oL) nx=-1; else if(m===oR) nx=1; else if(m===oT) ny=-1; else ny=1
+  resolveHit(ball,brick,nx,ny,m)
   return true
 }
 
@@ -398,21 +519,35 @@ function update(ts) {
   const hail=params.physicsMode==='hail', grav=hail?params.gravity:0
   for(let bi=balls.length-1;bi>=0;bi--) {
     const ball=balls[bi]
-    ball.vy+=grav*30*dt; ball.x+=ball.vx; ball.y+=ball.vy
-    ball.trail.push({x:ball.x,y:ball.y}); if(ball.trail.length>18) ball.trail.shift()
+    ball.vy+=grav*30*dt
+
+    // substep CCD: split movement so ball never skips past a brick in one tick
     const spd=Math.sqrt(ball.vx*ball.vx+ball.vy*ball.vy)
-    if(hail){
-      if(ball.x-ball.r<0){ball.x=ball.r;ball.vx=Math.abs(ball.vx);if(edgeSlots.left.enabled)triggerNote(edgeSlots.left,spd)}
-      if(ball.x+ball.r>canvas.width){ball.x=canvas.width-ball.r;ball.vx=-Math.abs(ball.vx);if(edgeSlots.right.enabled)triggerNote(edgeSlots.right,spd)}
-      if(ball.y-ball.r<0){ball.y=ball.r;ball.vy=Math.abs(ball.vy);if(edgeSlots.top.enabled)triggerNote(edgeSlots.top,spd)}
-      if(ball.y-ball.r>canvas.height){if(edgeSlots.bottom.enabled)triggerNote(edgeSlots.bottom,spd);balls[bi]=makeBall();continue}
-    } else {
-      if(ball.x-ball.r<0){ball.x=ball.r;ball.vx=Math.abs(ball.vx);if(edgeSlots.left.enabled)triggerNote(edgeSlots.left,spd)}
-      if(ball.x+ball.r>canvas.width){ball.x=canvas.width-ball.r;ball.vx=-Math.abs(ball.vx);if(edgeSlots.right.enabled)triggerNote(edgeSlots.right,spd)}
-      if(ball.y-ball.r<0){ball.y=ball.r;ball.vy=Math.abs(ball.vy);if(edgeSlots.top.enabled)triggerNote(edgeSlots.top,spd)}
-      if(ball.y+ball.r>canvas.height){ball.y=canvas.height-ball.r;ball.vy=-Math.abs(ball.vy);if(edgeSlots.bottom.enabled)triggerNote(edgeSlots.bottom,spd)}
+    const substeps=Math.max(1, Math.ceil(spd/ball.r))
+    const svx=ball.vx/substeps, svy=ball.vy/substeps
+    let respawned=false
+
+    for(let step=0;step<substeps;step++){
+      ball.x+=svx; ball.y+=svy
+      const stepSpd=spd  // speed unchanged within tick
+
+      if(hail){
+        if(ball.x-ball.r<0){ball.x=ball.r;ball.vx=Math.abs(ball.vx);if(edgeSlots.left.enabled)triggerNote(edgeSlots.left,stepSpd)}
+        if(ball.x+ball.r>canvas.width){ball.x=canvas.width-ball.r;ball.vx=-Math.abs(ball.vx);if(edgeSlots.right.enabled)triggerNote(edgeSlots.right,stepSpd)}
+        if(ball.y-ball.r<0){ball.y=ball.r;ball.vy=Math.abs(ball.vy);if(edgeSlots.top.enabled)triggerNote(edgeSlots.top,stepSpd)}
+        if(ball.y-ball.r>canvas.height){if(edgeSlots.bottom.enabled)triggerNote(edgeSlots.bottom,stepSpd);balls[bi]=makeBall();respawned=true;break}
+      } else {
+        if(ball.x-ball.r<0){ball.x=ball.r;ball.vx=Math.abs(ball.vx);if(edgeSlots.left.enabled)triggerNote(edgeSlots.left,stepSpd)}
+        if(ball.x+ball.r>canvas.width){ball.x=canvas.width-ball.r;ball.vx=-Math.abs(ball.vx);if(edgeSlots.right.enabled)triggerNote(edgeSlots.right,stepSpd)}
+        if(ball.y-ball.r<0){ball.y=ball.r;ball.vy=Math.abs(ball.vy);if(edgeSlots.top.enabled)triggerNote(edgeSlots.top,stepSpd)}
+        if(ball.y+ball.r>canvas.height){ball.y=canvas.height-ball.r;ball.vy=-Math.abs(ball.vy);if(edgeSlots.bottom.enabled)triggerNote(edgeSlots.bottom,stepSpd)}
+      }
+
+      for(const brick of bricks){if(brick.alive)ballBrickCollision(ball,brick)}
     }
-    for(const brick of bricks){if(brick.alive)ballBrickCollision(ball,brick)}
+
+    if(respawned) continue
+    ball.trail.push({x:ball.x,y:ball.y}); if(ball.trail.length>18) ball.trail.shift()
   }
   bricks=bricks.filter(b=>{b.flash=Math.max(0,b.flash-1);return b.alive||b.flash>0})
 }
@@ -436,43 +571,64 @@ function render() {
     ctx.globalAlpha=b.alive?1:b.flash/12
     if(b.flash>0&&!b.alive){ctx.fillStyle='#fff';ctx.shadowColor='#fff';ctx.shadowBlur=20}
     else{ctx.fillStyle=b.slot.color+'33';ctx.shadowColor=b.slot.color;ctx.shadowBlur=8}
-    ctx.fillRect(b.x,b.y,b.w,b.h);ctx.shadowBlur=0
-    if(b.alive){
-      ctx.strokeStyle=b.slot.color;ctx.lineWidth=1.5;ctx.strokeRect(b.x+.75,b.y+.75,b.w-1.5,b.h-1.5)
 
-      // cracks: show stages already passed
+    // shape fill
+    ctx.beginPath()
+    if(b.shape==='circle'){
+      ctx.arc(b.cx,b.cy,b.r,0,Math.PI*2)
+    } else if(b.shape==='polygon'){
+      ctx.moveTo(b.cx+b.vertices[0].x,b.cy+b.vertices[0].y)
+      for(let i=1;i<b.vertices.length;i++) ctx.lineTo(b.cx+b.vertices[i].x,b.cy+b.vertices[i].y)
+      ctx.closePath()
+    } else {
+      ctx.rect(b.x,b.y,b.w,b.h)
+    }
+    ctx.fill(); ctx.shadowBlur=0
+
+    if(b.alive){
+      ctx.strokeStyle=b.slot.color;ctx.lineWidth=1.5
+      ctx.beginPath()
+      if(b.shape==='circle'){
+        ctx.arc(b.cx,b.cy,b.r,0,Math.PI*2)
+      } else if(b.shape==='polygon'){
+        ctx.moveTo(b.cx+b.vertices[0].x,b.cy+b.vertices[0].y)
+        for(let i=1;i<b.vertices.length;i++) ctx.lineTo(b.cx+b.vertices[i].x,b.cy+b.vertices[i].y)
+        ctx.closePath()
+      } else {
+        ctx.rect(b.x+.75,b.y+.75,b.w-1.5,b.h-1.5)
+      }
+      ctx.stroke()
+
+      // cracks — use brick center for offset
+      const bcx = b.cx ?? (b.x + b.w/2), bcy = b.cy ?? (b.y + b.h/2)
+      const bsize = b.r ?? b.size ?? Math.max(b.w,b.h)/2
       const durability = b.slot.durability || 1
       const hitsDealt = durability - b.hitsLeft
       if (hitsDealt > 0 && b.cracks?.length) {
         ctx.save()
-        ctx.beginPath(); ctx.rect(b.x, b.y, b.w, b.h); ctx.clip()
+        // clip to shape
+        ctx.beginPath()
+        if(b.shape==='circle') ctx.arc(bcx,bcy,b.r,0,Math.PI*2)
+        else if(b.shape==='polygon'){ctx.moveTo(bcx+b.vertices[0].x,bcy+b.vertices[0].y);for(let i=1;i<b.vertices.length;i++)ctx.lineTo(bcx+b.vertices[i].x,bcy+b.vertices[i].y);ctx.closePath()}
+        else ctx.rect(b.x,b.y,b.w,b.h)
+        ctx.clip()
         const dmgRatio = hitsDealt / durability
         ctx.strokeStyle = `rgba(255,255,255,${0.3 + dmgRatio * 0.5})`
         ctx.lineWidth = 1
+        const ox = b.x ?? (bcx - bsize), oy = b.y ?? (bcy - bsize)
         for (const c of b.cracks) {
           if (c.stage > hitsDealt) continue
-          ctx.beginPath()
-          ctx.moveTo(b.x + c.x1, b.y + c.y1)
-          ctx.lineTo(b.x + c.x2, b.y + c.y2)
-          ctx.stroke()
-          // branch
-          ctx.beginPath()
-          ctx.moveTo(b.x + c.bx, b.y + c.by)
-          ctx.lineTo(b.x + c.bx2, b.y + c.by2)
-          ctx.stroke()
+          ctx.beginPath(); ctx.moveTo(ox+c.x1,oy+c.y1); ctx.lineTo(ox+c.x2,oy+c.y2); ctx.stroke()
+          ctx.beginPath(); ctx.moveTo(ox+c.bx,oy+c.by); ctx.lineTo(ox+c.bx2,oy+c.by2); ctx.stroke()
         }
+        // darken overlay
+        ctx.fillStyle = `rgba(0,0,0,${dmgRatio * 0.5})`
+        ctx.fillRect(ox-2,oy-2,bsize*2+4,bsize*2+4)
         ctx.restore()
       }
 
-      // darken fill as damage increases
-      if (hitsDealt > 0) {
-        const dmgRatio = hitsDealt / durability
-        ctx.fillStyle = `rgba(0,0,0,${dmgRatio * 0.5})`
-        ctx.fillRect(b.x, b.y, b.w, b.h)
-      }
-
       ctx.fillStyle=b.slot.color;ctx.font='10px SF Mono,monospace';ctx.textAlign='center';ctx.textBaseline='middle'
-      ctx.fillText(midiToName(b.slot.note),b.x+b.w/2,b.y+b.h/2)
+      ctx.fillText(midiToName(b.slot.note), bcx, bcy)
     }
     ctx.globalAlpha=1
   }
@@ -722,6 +878,16 @@ function openEditor(slot,type){
   document.getElementById('ed-durability').value=slot.durability||1
   document.getElementById('ed-durability-val').textContent=slot.durability||1
   document.getElementById('ed-durability-row').style.display=isEdge?'none':'flex'
+  document.getElementById('ed-shape-section').style.display=isEdge?'none':'block'
+  if(!isEdge){
+    const sh=slot.shape||'rect'
+    setEditorShape(sh)
+    document.getElementById('ed-shape-w').value=slot.shapeW||72;  document.getElementById('ed-shape-w-val').textContent=slot.shapeW||72
+    document.getElementById('ed-shape-h').value=slot.shapeH||22;  document.getElementById('ed-shape-h-val').textContent=slot.shapeH||22
+    document.getElementById('ed-shape-r').value=slot.shapeR||20;  document.getElementById('ed-shape-r-val').textContent=slot.shapeR||20
+    document.getElementById('ed-shape-sides').value=slot.shapeSides||6; document.getElementById('ed-shape-sides-val').textContent=slot.shapeSides||6
+    document.getElementById('ed-shape-size').value=slot.shapeSize||28;  document.getElementById('ed-shape-size-val').textContent=slot.shapeSize||28
+  }
   pianoOctaveStart=Math.max(0,Math.floor(slot.note/12)-1);updatePianoLabel();drawPiano(slot.note)
   document.getElementById('note-editor').classList.add('open')
 }
@@ -730,6 +896,24 @@ document.getElementById('ed-note').addEventListener('input',e=>{const n=parseInt
 document.getElementById('ed-prob').addEventListener('input',e=>{document.getElementById('ed-prob-val').textContent=e.target.value+'%'})
 document.getElementById('ed-vel-lock').addEventListener('input',e=>{const v=parseInt(e.target.value);document.getElementById('ed-vel-lock-val').textContent=v===0?'Auto':v})
 document.getElementById('ed-durability').addEventListener('input',e=>{document.getElementById('ed-durability-val').textContent=e.target.value})
+
+// Shape selector
+function setEditorShape(shape) {
+  document.querySelectorAll('#ed-shape-btns .mode-btn').forEach(b=>{
+    b.classList.toggle('active', b.dataset.shape===shape)
+  })
+  document.getElementById('ed-rect-params').style.display    = shape==='rect'    ? 'block' : 'none'
+  document.getElementById('ed-circle-params').style.display  = shape==='circle'  ? 'block' : 'none'
+  document.getElementById('ed-polygon-params').style.display = shape==='polygon' ? 'block' : 'none'
+}
+document.querySelectorAll('#ed-shape-btns .mode-btn').forEach(btn=>{
+  btn.addEventListener('click',()=>setEditorShape(btn.dataset.shape))
+})
+document.getElementById('ed-shape-w').addEventListener('input',e=>{document.getElementById('ed-shape-w-val').textContent=e.target.value})
+document.getElementById('ed-shape-h').addEventListener('input',e=>{document.getElementById('ed-shape-h-val').textContent=e.target.value})
+document.getElementById('ed-shape-r').addEventListener('input',e=>{document.getElementById('ed-shape-r-val').textContent=e.target.value})
+document.getElementById('ed-shape-sides').addEventListener('input',e=>{document.getElementById('ed-shape-sides-val').textContent=e.target.value})
+document.getElementById('ed-shape-size').addEventListener('input',e=>{document.getElementById('ed-shape-size-val').textContent=e.target.value})
 document.getElementById('ed-save').addEventListener('click',()=>{
   if(!editingSlot)return
   editingSlot.note=parseInt(document.getElementById('ed-note').value)
@@ -738,13 +922,20 @@ document.getElementById('ed-save').addEventListener('click',()=>{
   if(editingType==='brick') {
     editingSlot.prob=parseInt(document.getElementById('ed-prob').value)
     editingSlot.durability=parseInt(document.getElementById('ed-durability').value)
+    const activeShapeBtn=document.querySelector('#ed-shape-btns .mode-btn.active')
+    editingSlot.shape=activeShapeBtn?.dataset.shape||'rect'
+    editingSlot.shapeW=parseInt(document.getElementById('ed-shape-w').value)
+    editingSlot.shapeH=parseInt(document.getElementById('ed-shape-h').value)
+    editingSlot.shapeR=parseInt(document.getElementById('ed-shape-r').value)
+    editingSlot.shapeSides=parseInt(document.getElementById('ed-shape-sides').value)
+    editingSlot.shapeSize=parseInt(document.getElementById('ed-shape-size').value)
   }
   document.getElementById('note-editor').classList.remove('open');renderNoteSlots();renderEdgeSlots()
 })
 document.getElementById('ed-cancel').addEventListener('click',()=>document.getElementById('note-editor').classList.remove('open'))
 document.getElementById('ed-delete').addEventListener('click',()=>{noteSlots=noteSlots.filter(s=>s!==editingSlot);document.getElementById('note-editor').classList.remove('open');renderNoteSlots()})
 document.getElementById('add-note-btn').addEventListener('click',()=>{
-  const s={id:nextSlotId++,note:60+Math.floor(Math.random()*24),prob:50,color:'#'+Math.floor(Math.random()*0xffffff).toString(16).padStart(6,'0'),enabled:true,velLock:0,durability:1}
+  const s={id:nextSlotId++,note:60+Math.floor(Math.random()*24),prob:50,color:'#'+Math.floor(Math.random()*0xffffff).toString(16).padStart(6,'0'),enabled:true,velLock:0,durability:1,...defaultShape()}
   noteSlots.push(s);renderNoteSlots();openEditor(s,'brick')
 })
 
