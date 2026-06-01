@@ -68,6 +68,32 @@
 <body>
 <div id="panel">
   <div class="panel-title">🎱 BREAKOUT MIDI</div>
+
+  <!-- TRANSPORT (top) -->
+  <div>
+    <div id="transport">
+      <button class="btn primary" id="play-btn">▶ Play</button>
+      <button class="btn" id="reset-btn">↺ Reset</button>
+      <button class="btn" id="test-midi-btn">🔔</button>
+    </div>
+    <div id="test-midi-result" style="font-size:10px;color:#666;margin-top:4px"></div>
+  </div>
+
+  <!-- MIDI INPUT -->
+  <div>
+    <div class="section-label">MIDI Input</div>
+    <div id="midi-in-status" style="font-size:11px;color:#666">Not connected</div>
+    <select id="midi-in-select" style="display:none"></select>
+    <div class="knob-row" style="margin-top:6px">
+      <label>Vel → Prob</label>
+      <div style="flex:2;display:flex;align-items:center;gap:8px">
+        <input type="checkbox" id="vel-prob" style="width:14px;height:14px;accent-color:#4a6fa5;cursor:pointer">
+        <span style="color:#666;font-size:10px">Off</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- MIDI OUTPUT -->
   <div>
     <div class="section-label">MIDI Output</div>
     <div id="midi-status">Initializing…</div>
@@ -77,6 +103,8 @@
       <span class="val" id="midi-channel-val">1</span>
     </div>
   </div>
+
+  <!-- PHYSICS -->
   <div>
     <div class="section-label">Physics</div>
     <div class="mode-row">
@@ -85,8 +113,15 @@
     </div>
     <div class="knob-row">
       <label>Ball Speed</label>
-      <input type="range" id="ball-speed" min="1" max="20" value="6" step="0.5">
+      <input type="range" id="ball-speed" min="1" max="40" value="6" step="0.5">
       <span class="val" id="ball-speed-val">6</span>
+    </div>
+    <div class="knob-row">
+      <label>Speed → Vel</label>
+      <div style="flex:2;display:flex;align-items:center;gap:8px">
+        <input type="checkbox" id="speed-vel" checked style="width:14px;height:14px;accent-color:#4a6fa5;cursor:pointer">
+        <span style="color:#666;font-size:10px" id="speed-vel-label">On</span>
+      </div>
     </div>
     <div class="knob-row" id="gravity-row" style="display:none">
       <label>Gravity</label>
@@ -95,20 +130,22 @@
     </div>
     <div class="knob-row">
       <label>Num Balls</label>
-      <input type="range" id="num-balls" min="1" max="8" value="1" step="1">
+      <input type="range" id="num-balls" min="1" max="16" value="1" step="1">
       <span class="val" id="num-balls-val">1</span>
     </div>
   </div>
+
+  <!-- SPAWNING -->
   <div>
     <div class="section-label">Brick Spawning</div>
     <div class="knob-row">
       <label>Spawn Rate</label>
-      <input type="range" id="spawn-rate" min="0.2" max="5" value="1.5" step="0.1">
-      <span class="val" id="spawn-rate-val">1.5<small>s</small></span>
+      <input type="range" id="spawn-rate" min="0.1" max="10" value="0.7" step="0.1">
+      <span class="val" id="spawn-rate-val">0.7<small>/s</small></span>
     </div>
     <div class="knob-row">
       <label>Max Bricks</label>
-      <input type="range" id="max-bricks" min="4" max="60" value="24" step="1">
+      <input type="range" id="max-bricks" min="4" max="120" value="24" step="1">
       <span class="val" id="max-bricks-val">24</span>
     </div>
     <div class="knob-row">
@@ -116,14 +153,9 @@
       <input type="range" id="note-len" min="50" max="2000" value="200" step="10">
       <span class="val" id="note-len-val">200<small>ms</small></span>
     </div>
-    <div class="knob-row">
-      <label>Speed to Vel</label>
-      <div style="flex:2;display:flex;align-items:center;gap:8px">
-        <input type="checkbox" id="speed-vel" checked style="width:16px;height:16px;accent-color:#4a6fa5;cursor:pointer">
-        <span style="color:#666;font-size:10px" id="speed-vel-label">On</span>
-      </div>
-    </div>
   </div>
+
+  <!-- EDGE NOTES -->
   <div>
     <div class="section-label">Edge Notes</div>
     <div class="edge-grid">
@@ -133,19 +165,12 @@
       <div class="edge-slot" data-edge="bottom">↓ Bot<span class="edge-note">—</span></div>
     </div>
   </div>
+
+  <!-- NOTE POOL -->
   <div>
     <div class="section-label">Note Pool</div>
     <div id="note-slots"></div>
     <button class="btn" id="add-note-btn">+ Add Note</button>
-  </div>
-  <div>
-    <div class="section-label">Transport</div>
-    <div id="transport">
-      <button class="btn primary" id="play-btn">▶ Play</button>
-      <button class="btn" id="reset-btn">↺ Reset</button>
-    </div>
-    <button class="btn" id="test-midi-btn" style="width:100%;margin-top:4px">🔔 Test MIDI</button>
-    <div id="test-midi-result" style="font-size:10px;color:#666;margin-top:2px"></div>
   </div>
 </div>
 
@@ -176,6 +201,11 @@
     <input type="range" id="ed-vel-lock" min="0" max="127" value="0" step="1">
     <span class="val" id="ed-vel-lock-val">Auto</span>
   </div>
+  <div class="editor-row" id="ed-durability-row">
+    <label>Durability</label>
+    <input type="range" id="ed-durability" min="1" max="8" value="1" step="1">
+    <span class="val" id="ed-durability-val">1</span>
+  </div>
   <div class="btn-row">
     <button class="btn danger" id="ed-delete" style="display:none">Delete</button>
     <button class="btn" id="ed-cancel">Cancel</button>
@@ -204,10 +234,10 @@ function weightedRandom(slots) {
 }
 
 let noteSlots = [
-  {id:1,note:60,prob:60,color:'#4a9af5',enabled:true,velLock:0},
-  {id:2,note:64,prob:50,color:'#f5a44a',enabled:true,velLock:0},
-  {id:3,note:67,prob:40,color:'#a44af5',enabled:true,velLock:0},
-  {id:4,note:72,prob:30,color:'#f54a4a',enabled:true,velLock:0},
+  {id:1,note:60,prob:60,color:'#4a9af5',enabled:true,velLock:0,durability:1},
+  {id:2,note:64,prob:50,color:'#f5a44a',enabled:true,velLock:0,durability:1},
+  {id:3,note:67,prob:40,color:'#a44af5',enabled:true,velLock:0,durability:1},
+  {id:4,note:72,prob:30,color:'#f54a4a',enabled:true,velLock:0,durability:1},
 ]
 let nextSlotId = 5
 
@@ -219,7 +249,7 @@ let edgeSlots = {
 }
 
 let playing=false, balls=[], bricks=[], spawnTimer=0
-let params = {ballSpeed:6,gravity:0.3,numBalls:1,spawnRate:1.5,maxBricks:24,noteLen:200,midiChannel:1,physicsMode:'billiards',speedToVel:true}
+let params = {ballSpeed:6,gravity:0.3,numBalls:1,spawnRate:1/0.7,maxBricks:24,noteLen:200,midiChannel:1,physicsMode:'billiards',speedToVel:true}
 
 const canvas = document.getElementById('sim')
 const ctx = canvas.getContext('2d')
@@ -250,11 +280,93 @@ function spawnBrick() {
   const rows=Math.floor((canvas.height*.75)/(BRICK_H+BRICK_PAD))
   const y=BRICK_PAD+Math.floor(Math.random()*rows)*(BRICK_H+BRICK_PAD)
   if (bricks.some(b=>Math.abs(b.x-x)<BRICK_W+BRICK_PAD&&Math.abs(b.y-y)<BRICK_H+BRICK_PAD)) return
-  bricks.push({x,y,w:BRICK_W,h:BRICK_H,slot,flash:0,alive:true})
+  bricks.push({x,y,w:BRICK_W,h:BRICK_H,slot,flash:0,alive:true,hitsLeft:slot.durability||1,cracks:genCracks(x,y,BRICK_W,BRICK_H,slot.durability||1)})
+}
+
+// Held note pool — notes added while held, removed on release
+const HELD_NOTE_PREFIX = 'held_'
+const HELD_COLORS = ['#ff6b6b','#ffd93d','#6bcb77','#4d96ff','#c77dff','#ff9f1c','#2ec4b6','#e71d36']
+let heldColorIdx = 0
+
+function addHeldNote(note, vel) {
+  const id = HELD_NOTE_PREFIX + note
+  if (noteSlots.find(s => s.id === id)) return  // already held
+  const velProb = document.getElementById('vel-prob')?.checked
+  const slot = {
+    id,
+    note,
+    prob: velProb ? Math.round(vel / 127 * 99) + 1 : 50,
+    color: HELD_COLORS[heldColorIdx++ % HELD_COLORS.length],
+    enabled: true,
+    velLock: 0,
+    held: true,
+  }
+  noteSlots.push(slot)
+  renderNoteSlots()
+}
+
+function removeHeldNote(note) {
+  const id = HELD_NOTE_PREFIX + note
+  noteSlots = noteSlots.filter(s => s.id !== id)
+  renderNoteSlots()
+}
+
+function spawnBrickFromMidi(note, vel) {
+  if (bricks.length >= params.maxBricks) return
+  const velProb = document.getElementById('vel-prob')?.checked
+  // build a temporary slot from the incoming note
+  const slot = {
+    note,
+    prob: velProb ? vel : 50,
+    color: noteSlots[note % noteSlots.length]?.color || '#aaaaff',
+    enabled: true,
+    velLock: 0,
+  }
+  const cols = Math.floor((canvas.width - BRICK_PAD) / (BRICK_W + BRICK_PAD))
+  const col  = Math.floor(Math.random() * cols)
+  const x    = BRICK_PAD + col * (BRICK_W + BRICK_PAD)
+  const rows = Math.floor((canvas.height * .75) / (BRICK_H + BRICK_PAD))
+  const y    = BRICK_PAD + Math.floor(Math.random() * rows) * (BRICK_H + BRICK_PAD)
+  if (bricks.some(b => Math.abs(b.x-x)<BRICK_W+BRICK_PAD && Math.abs(b.y-y)<BRICK_H+BRICK_PAD)) return
+  bricks.push({ x, y, w:BRICK_W, h:BRICK_H, slot, flash:0, alive:true, hitsLeft:slot.durability||1, cracks:genCracks(x,y,BRICK_W,BRICK_H,slot.durability||1) })
 }
 
 function resetSim() { balls=[]; bricks=[]; spawnTimer=0; for(let i=0;i<params.numBalls;i++) balls.push(makeBall()) }
 function syncBallCount() { while(balls.length<params.numBalls) balls.push(makeBall()); while(balls.length>params.numBalls) balls.pop() }
+
+// Generate crack line segments for a brick. Each crack has a `stage` (1..durability-1)
+// indicating which hit reveals it.
+function genCracks(bx, by, bw, bh, durability) {
+  const cracks = []
+  if (durability <= 1) return cracks
+  // seed a simple deterministic random from brick position
+  let s = (bx * 1000 + by * 7 + bw * 3) | 0
+  function rand() { s = (s * 1664525 + 1013904223) & 0xffffffff; return (s >>> 0) / 0xffffffff }
+
+  for (let stage = 1; stage < durability; stage++) {
+    const numLines = 2 + Math.floor(rand() * 3)  // 2-4 lines per stage
+    for (let i = 0; i < numLines; i++) {
+      // origin: random interior point
+      const ox = bw * (0.15 + rand() * 0.7)
+      const oy = bh * (0.15 + rand() * 0.7)
+      // direction: random angle, length up to 40% of brick dimension
+      const angle = rand() * Math.PI * 2
+      const len = (bw * 0.15) + rand() * (bw * 0.25)
+      cracks.push({
+        stage,
+        x1: ox, y1: oy,
+        x2: ox + Math.cos(angle) * len,
+        y2: oy + Math.sin(angle) * len,
+        // optional branch
+        bx: ox + Math.cos(angle) * len * 0.5,
+        by: oy + Math.sin(angle) * len * 0.5,
+        bx2: ox + Math.cos(angle + 0.8) * len * 0.4,
+        by2: oy + Math.sin(angle + 0.8) * len * 0.4,
+      })
+    }
+  }
+  return cracks
+}
 
 function ballBrickCollision(ball,brick) {
   const cx=clamp(ball.x,brick.x,brick.x+brick.w), cy=clamp(ball.y,brick.y,brick.y+brick.h)
@@ -270,7 +382,11 @@ function ballBrickCollision(ball,brick) {
   else            {ball.vy=Math.abs(ball.vy);ball.y=brick.y+brick.h+ball.r}
   const s2=Math.sqrt(ball.vx*ball.vx+ball.vy*ball.vy)
   if(s2>0){ball.vx=ball.vx/s2*params.ballSpeed;ball.vy=ball.vy/s2*params.ballSpeed}
-  brick.flash=12; brick.alive=false; triggerNote(brick.slot,spd); return true
+  brick.hitsLeft = (brick.hitsLeft || 1) - 1
+  brick.flash = 12
+  if (brick.hitsLeft <= 0) brick.alive = false
+  triggerNote(brick.slot, spd)
+  return true
 }
 
 let lastTime=null
@@ -323,6 +439,38 @@ function render() {
     ctx.fillRect(b.x,b.y,b.w,b.h);ctx.shadowBlur=0
     if(b.alive){
       ctx.strokeStyle=b.slot.color;ctx.lineWidth=1.5;ctx.strokeRect(b.x+.75,b.y+.75,b.w-1.5,b.h-1.5)
+
+      // cracks: show stages already passed
+      const durability = b.slot.durability || 1
+      const hitsDealt = durability - b.hitsLeft
+      if (hitsDealt > 0 && b.cracks?.length) {
+        ctx.save()
+        ctx.beginPath(); ctx.rect(b.x, b.y, b.w, b.h); ctx.clip()
+        const dmgRatio = hitsDealt / durability
+        ctx.strokeStyle = `rgba(255,255,255,${0.3 + dmgRatio * 0.5})`
+        ctx.lineWidth = 1
+        for (const c of b.cracks) {
+          if (c.stage > hitsDealt) continue
+          ctx.beginPath()
+          ctx.moveTo(b.x + c.x1, b.y + c.y1)
+          ctx.lineTo(b.x + c.x2, b.y + c.y2)
+          ctx.stroke()
+          // branch
+          ctx.beginPath()
+          ctx.moveTo(b.x + c.bx, b.y + c.by)
+          ctx.lineTo(b.x + c.bx2, b.y + c.by2)
+          ctx.stroke()
+        }
+        ctx.restore()
+      }
+
+      // darken fill as damage increases
+      if (hitsDealt > 0) {
+        const dmgRatio = hitsDealt / durability
+        ctx.fillStyle = `rgba(0,0,0,${dmgRatio * 0.5})`
+        ctx.fillRect(b.x, b.y, b.w, b.h)
+      }
+
       ctx.fillStyle=b.slot.color;ctx.font='10px SF Mono,monospace';ctx.textAlign='center';ctx.textBaseline='middle'
       ctx.fillText(midiToName(b.slot.note),b.x+b.w/2,b.y+b.h/2)
     }
@@ -361,28 +509,55 @@ function initWebSocket() {
 
     ws.onmessage = e => {
       const msg = JSON.parse(e.data)
+
       if (msg.type === 'ports') {
         midiSocket = ws
-        // build/update port selector
-        let sel = document.getElementById('ws-port-select')
-        if (!sel) {
-          sel = document.createElement('select')
-          sel.id = 'ws-port-select'
-          statusEl.after(sel)
-          sel.addEventListener('change', () => {
-            ws.send(JSON.stringify({ type: 'setPort', index: parseInt(sel.value) }))
+
+        // ── Output port selector ──
+        let outSel = document.getElementById('ws-port-select')
+        if (!outSel) {
+          outSel = document.createElement('select')
+          outSel.id = 'ws-port-select'
+          statusEl.after(outSel)
+          outSel.addEventListener('change', () => {
+            ws.send(JSON.stringify({ type: 'setOutPort', index: parseInt(outSel.value) }))
           })
         }
-        sel.innerHTML = '<option value="-1" disabled>— select MIDI output —</option>'
-        msg.ports.forEach(p => {
+        outSel.innerHTML = '<option value="-1" disabled>— select output —</option>'
+        msg.outPorts.forEach(p => {
           const opt = document.createElement('option')
           opt.value = p.index; opt.textContent = p.name
-          if (p.index === msg.current) opt.selected = true
-          sel.appendChild(opt)
+          if (p.index === msg.currentOut) opt.selected = true
+          outSel.appendChild(opt)
         })
-        if (msg.current === null) sel.value = '-1'
-        statusEl.textContent = msg.current !== null ? 'MIDI via server ✓' : 'Select a MIDI output ↓'
-        statusEl.className = msg.current !== null ? 'connected' : ''
+        if (msg.currentOut === null) outSel.value = '-1'
+        statusEl.textContent = msg.currentOut !== null ? 'MIDI via server ✓' : 'Select a MIDI output ↓'
+        statusEl.className = msg.currentOut !== null ? 'connected' : ''
+
+        // ── Input port selector ──
+        const inStatus = document.getElementById('midi-in-status')
+        let inSel = document.getElementById('midi-in-select')
+        inSel.innerHTML = '<option value="-1">— none —</option>'
+        msg.inPorts.forEach(p => {
+          const opt = document.createElement('option')
+          opt.value = p.index; opt.textContent = p.name
+          if (p.index === msg.currentIn) opt.selected = true
+          inSel.appendChild(opt)
+        })
+        inSel.style.display = 'block'
+        if (msg.currentIn !== null) {
+          inStatus.textContent = msg.inPorts[msg.currentIn]?.name || 'Connected'
+          inStatus.style.color = '#4ade80'
+        }
+        inSel.addEventListener('change', () => {
+          const idx = parseInt(inSel.value)
+          ws.send(JSON.stringify({ type: 'setInPort', index: idx }))
+        })
+      }
+
+      if (msg.type === 'midiIn') {
+        if (msg.on) addHeldNote(msg.note, msg.vel)
+        else removeHeldNote(msg.note)
       }
     }
 
@@ -515,7 +690,7 @@ function renderNoteSlots(){
   for(const slot of noteSlots){
     const el=document.createElement('div')
     el.className='note-slot'+(slot.enabled?' active':'');el.style.setProperty('--slot-color',slot.color)
-    el.innerHTML=`<div class="slot-color-dot"></div><span class="slot-note-name">${midiToName(slot.note)}</span><span class="slot-prob">${slot.prob}%</span><div class="slot-active-toggle ${slot.enabled?'on':''}"></div>`
+    el.innerHTML=`<div class="slot-color-dot"></div><span class="slot-note-name">${midiToName(slot.note)}${slot.held?' <small style="color:#666;font-size:9px">held</small>':''}</span><span class="slot-prob">${slot.prob}%</span><div class="slot-active-toggle ${slot.enabled?'on':''}"></div>`
     el.querySelector('.slot-active-toggle').addEventListener('click',e=>{e.stopPropagation();slot.enabled=!slot.enabled;renderNoteSlots()})
     el.addEventListener('click',()=>openEditor(slot,'brick'))
     container.appendChild(el)
@@ -544,6 +719,9 @@ function openEditor(slot,type){
   document.getElementById('ed-color').value=slot.color
   document.getElementById('ed-vel-lock').value=slot.velLock
   document.getElementById('ed-vel-lock-val').textContent=slot.velLock===0?'Auto':slot.velLock
+  document.getElementById('ed-durability').value=slot.durability||1
+  document.getElementById('ed-durability-val').textContent=slot.durability||1
+  document.getElementById('ed-durability-row').style.display=isEdge?'none':'flex'
   pianoOctaveStart=Math.max(0,Math.floor(slot.note/12)-1);updatePianoLabel();drawPiano(slot.note)
   document.getElementById('note-editor').classList.add('open')
 }
@@ -551,18 +729,22 @@ function openEditor(slot,type){
 document.getElementById('ed-note').addEventListener('input',e=>{const n=parseInt(e.target.value);document.getElementById('ed-note-val').textContent=midiToName(n);drawPiano(n)})
 document.getElementById('ed-prob').addEventListener('input',e=>{document.getElementById('ed-prob-val').textContent=e.target.value+'%'})
 document.getElementById('ed-vel-lock').addEventListener('input',e=>{const v=parseInt(e.target.value);document.getElementById('ed-vel-lock-val').textContent=v===0?'Auto':v})
+document.getElementById('ed-durability').addEventListener('input',e=>{document.getElementById('ed-durability-val').textContent=e.target.value})
 document.getElementById('ed-save').addEventListener('click',()=>{
   if(!editingSlot)return
   editingSlot.note=parseInt(document.getElementById('ed-note').value)
   editingSlot.color=document.getElementById('ed-color').value
   editingSlot.velLock=parseInt(document.getElementById('ed-vel-lock').value)
-  if(editingType==='brick') editingSlot.prob=parseInt(document.getElementById('ed-prob').value)
+  if(editingType==='brick') {
+    editingSlot.prob=parseInt(document.getElementById('ed-prob').value)
+    editingSlot.durability=parseInt(document.getElementById('ed-durability').value)
+  }
   document.getElementById('note-editor').classList.remove('open');renderNoteSlots();renderEdgeSlots()
 })
 document.getElementById('ed-cancel').addEventListener('click',()=>document.getElementById('note-editor').classList.remove('open'))
 document.getElementById('ed-delete').addEventListener('click',()=>{noteSlots=noteSlots.filter(s=>s!==editingSlot);document.getElementById('note-editor').classList.remove('open');renderNoteSlots()})
 document.getElementById('add-note-btn').addEventListener('click',()=>{
-  const s={id:nextSlotId++,note:60+Math.floor(Math.random()*24),prob:50,color:'#'+Math.floor(Math.random()*0xffffff).toString(16).padStart(6,'0'),enabled:true,velLock:0}
+  const s={id:nextSlotId++,note:60+Math.floor(Math.random()*24),prob:50,color:'#'+Math.floor(Math.random()*0xffffff).toString(16).padStart(6,'0'),enabled:true,velLock:0,durability:1}
   noteSlots.push(s);renderNoteSlots();openEditor(s,'brick')
 })
 
@@ -587,12 +769,23 @@ function wireRange(id,valId,key,fmt){
 wireRange('ball-speed','ball-speed-val','ballSpeed')
 wireRange('gravity','gravity-val','gravity')
 wireRange('num-balls','num-balls-val','numBalls')
-wireRange('spawn-rate','spawn-rate-val','spawnRate',v=>`${parseFloat(v).toFixed(1)}<small>s</small>`)
+// spawn rate: slider = bricks/sec, internal = interval in seconds
+document.getElementById('spawn-rate').addEventListener('input', e => {
+  const bps = parseFloat(e.target.value)
+  params.spawnRate = 1 / bps
+  document.getElementById('spawn-rate-val').innerHTML = `${bps.toFixed(1)}<small>/s</small>`
+})
 wireRange('max-bricks','max-bricks-val','maxBricks')
 wireRange('note-len','note-len-val','noteLen',v=>`${v}<small>ms</small>`)
 
 document.getElementById('midi-channel').addEventListener('input',e=>{params.midiChannel=parseInt(e.target.value);document.getElementById('midi-channel-val').textContent=e.target.value})
-document.getElementById('speed-vel').addEventListener('change',e=>{params.speedToVel=e.target.checked;document.getElementById('speed-vel-label').textContent=e.target.checked?'On':'Off'})
+document.getElementById('speed-vel').addEventListener('change',e=>{
+  params.speedToVel=e.target.checked
+  document.getElementById('speed-vel-label').textContent=e.target.checked?'On':'Off'
+})
+document.getElementById('vel-prob').addEventListener('change',e=>{
+  e.target.nextElementSibling.textContent = e.target.checked ? 'On' : 'Off'
+})
 
 const gravityRow=document.getElementById('gravity-row')
 document.querySelectorAll('.mode-btn').forEach(btn=>{
