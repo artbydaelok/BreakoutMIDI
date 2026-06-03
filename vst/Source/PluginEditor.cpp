@@ -32,6 +32,11 @@ namespace
             {
                 proc.requestReset();
                 complete (juce::var());
+            })
+            .withNativeFunction ("setMouse", [&proc] (const juce::Array<juce::var>& a, WBC::NativeFunctionCompletion complete)
+            {
+                if (a.size() >= 3) proc.setMouse ((float) (double) a[0], (float) (double) a[1], (bool) a[2]);
+                complete (juce::var());
             });
     }
 }

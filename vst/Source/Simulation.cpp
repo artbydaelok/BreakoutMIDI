@@ -241,6 +241,97 @@ bool Simulation::ballBrickCollision (Ball& ball, Brick& brick, std::vector<NoteE
     return true;
 }
 
+void Simulation::applyMouseForce (Ball& b)
+{
+    const float dx = mouseX - b.x, dy = mouseY - b.y;
+    const float dist = std::sqrt (dx * dx + dy * dy);
+    if (dist < 1.0f) return;
+    const float dir     = config.params.forceAttract ? 1.0f : -1.0f;
+    const float falloff = 1.0f / (1.0f + dist / 140.0f);
+    const float f       = config.params.forceStrength * 0.05f * falloff * dir;
+    b.vx += (dx / dist) * f;
+    b.vy += (dy / dist) * f;
+    const float s    = std::sqrt (b.vx * b.vx + b.vy * b.vy);
+    const float maxS = config.params.ballSpeed * 2.2f;
+    if (s > maxS) { b.vx = b.vx / s * maxS; b.vy = b.vy / s * maxS; }
+}
+
+void Simulation::applyCage (Ball& b)
+{
+    const float dx = b.x - mouseX, dy = b.y - mouseY;
+    float dist = std::sqrt (dx * dx + dy * dy);
+    if (dist < 1.0e-3f) dist = 1.0e-3f;
+    const float nx = dx / dist, ny = dy / dist;
+    const float R = config.params.cageRadius;
+
+    if (dist < R) // inside: keep trapped
+    {
+        const float maxD = R - b.r;
+        if (dist > maxD)
+        {
+            b.x = mouseX + nx * maxD; b.y = mouseY + ny * maxD;
+            const float dot = b.vx * nx + b.vy * ny;
+            if (dot > 0) { b.vx -= 2 * dot * nx; b.vy -= 2 * dot * ny; }
+        }
+    }
+    else          // outside: keep out
+    {
+        const float minD = R + b.r;
+        if (dist < minD)
+        {
+            b.x = mouseX + nx * minD; b.y = mouseY + ny * minD;
+            const float dot = b.vx * nx + b.vy * ny;
+            if (dot < 0) { b.vx -= 2 * dot * nx; b.vy -= 2 * dot * ny; }
+        }
+    }
+}
+
+bool Simulation::paddleHit (Ball& b, float left, float top, float w, float h)
+{
+    const float cpx = clampv (b.x, left, left + w);
+    const float cpy = clampv (b.y, top,  top  + h);
+    const float dx = b.x - cpx, dy = b.y - cpy;
+    if (dx * dx + dy * dy >= b.r * b.r) return false;
+
+    const float oL = (b.x + b.r) - left;
+    const float oR = (left + w) - (b.x - b.r);
+    const float oT = (b.y + b.r) - top;
+    const float oB = (top + h) - (b.y - b.r);
+    const float m = std::min (std::min (oL, oR), std::min (oT, oB));
+    float nx = 0, ny = 0;
+    if      (m == oL) nx = -1;
+    else if (m == oR) nx =  1;
+    else if (m == oT) ny = -1;
+    else              ny =  1;
+    b.x += nx * m; b.y += ny * m;
+    const float dot = b.vx * nx + b.vy * ny;
+    if (dot < 0) { b.vx -= 2 * dot * nx; b.vy -= 2 * dot * ny; }
+    return true;
+}
+
+void Simulation::applyPaddles (Ball& b, std::vector<NoteEvent>& out)
+{
+    const float W = config.width, H = config.height;
+    const float len = config.params.paddleSize, half = len * 0.5f;
+    const float thick = 10.0f, inset = 16.0f;
+    const float mx = clampv (mouseX, half, W - half);
+    const float my = clampv (mouseY, half, H - half);
+
+    struct P { float left, top, w, h; int edge; };
+    const P paddles[4] = {
+        { mx - half,                  inset - thick * 0.5f, len,   thick, 0 }, // top   (mouse X)
+        { W - inset - thick * 0.5f,   my - half,            thick, len,   1 }, // right (mouse Y)
+        { mx - half,                  H - inset - thick * 0.5f, len, thick, 2 }, // bottom (mouse X)
+        { inset - thick * 0.5f,       my - half,            thick, len,   3 }  // left  (mouse Y)
+    };
+
+    for (const auto& p : paddles)
+        if (paddleHit (b, p.left, p.top, p.w, p.h))
+            if (config.edges[p.edge].enabled)
+                emitNote (config.edges[p.edge].note, config.edges[p.edge].velLock,
+                          std::sqrt (b.vx * b.vx + b.vy * b.vy), out);
+}
+
 void Simulation::applyConfig (const Config& cfg)
 {
     const int   prevMode  = config.params.mode;
@@ -296,6 +387,8 @@ void Simulation::step (double dt, std::vector<NoteEvent>& out)
         Ball& ball = balls[(size_t) bi];
         ball.vy += grav * 30.0f * (float) dt;
 
+        if (mouseActive && config.params.mouseMode == ForceField) applyMouseForce (ball);
+
         const float spd = std::sqrt (ball.vx * ball.vx + ball.vy * ball.vy);
         const int substeps = std::max (1, (int) std::ceil (spd / ball.r));
         const float svx = ball.vx / substeps, svy = ball.vy / substeps;
@@ -323,6 +416,12 @@ void Simulation::step (double dt, std::vector<NoteEvent>& out)
 
             for (auto& brick : bricks)
                 if (brick.alive) ballBrickCollision (ball, brick, out);
+
+            if (mouseActive)
+            {
+                if      (config.params.mouseMode == Cage)     applyCage (ball);
+                else if (config.params.mouseMode == Breakout) applyPaddles (ball, out);
+            }
         }
 
         if (respawned) continue;

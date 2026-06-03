@@ -36,6 +36,8 @@ public:
 
     struct Edge { int note = 48; bool enabled = false; int velLock = 0; };
 
+    enum MouseMode { MouseOff = 0, ForceField = 1, Cage = 2, Breakout = 3 };
+
     struct Params
     {
         float ballSpeed = 6.0f;
@@ -47,6 +49,13 @@ public:
         int   midiChannel = 1;
         int   mode      = Billiards;
         bool  speedToVel = true;
+
+        // mouse interaction
+        int   mouseMode     = MouseOff;
+        float forceStrength = 30.0f;   // 0..100
+        bool  forceAttract  = false;   // false = repel
+        float cageRadius    = 120.0f;
+        float paddleSize    = 90.0f;
     };
 
     struct Config
@@ -78,6 +87,9 @@ public:
 
     void setPlaying (bool shouldPlay);
     bool isPlaying() const { return playing; }
+
+    // Cursor position (sim/canvas pixels). Pushed every frame by the processor.
+    void setMouse (float x, float y, bool active) { mouseX = x; mouseY = y; mouseActive = active; }
 
     void reset();                                   // rebuild balls, clear bricks
 
@@ -111,6 +123,14 @@ private:
     bool   playing = false;
     double spawnTimer = 0.0;
     std::mt19937 rng { 0x9E3779B9u };
+
+    float mouseX = 0.0f, mouseY = 0.0f;
+    bool  mouseActive = false;
+
+    void applyMouseForce (Ball& b);                                   // force field (per step)
+    void applyCage       (Ball& b);                                   // cage wall (per substep)
+    void applyPaddles    (Ball& b, std::vector<NoteEvent>& outNotes); // breakout (per substep)
+    bool paddleHit (Ball& b, float left, float top, float w, float h); // circle/rect reflect
 
     float rand01();
     float brickBounds (const Slot& s) const;

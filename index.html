@@ -20,6 +20,8 @@
   .mode-row { display: flex; gap: 6px; margin-bottom: 6px; }
   .mode-btn { flex: 1; background: #1c1c1c; border: 1px solid #2e2e2e; color: #888; border-radius: 4px; padding: 5px 4px; cursor: pointer; font-family: inherit; font-size: 10px; text-align: center; transition: all .1s; }
   .mode-btn.active { background: #2a3a52; border-color: #4a6fa5; color: #a0c0ff; }
+  .mmode-btn { flex: 1; background: #1c1c1c; border: 1px solid #2e2e2e; color: #888; border-radius: 4px; padding: 5px 2px; cursor: pointer; font-family: inherit; font-size: 10px; text-align: center; transition: all .1s; }
+  .mmode-btn.active { background: #3a2a52; border-color: #7a5aa5; color: #c8a8ff; }
   #note-slots { display: flex; flex-direction: column; gap: 6px; }
   .note-slot { background: #1c1c1c; border: 1px solid #2e2e2e; border-radius: 6px; padding: 8px 10px; display: grid; grid-template-columns: 14px 1fr auto auto; align-items: center; gap: 6px; cursor: pointer; transition: border-color .15s; }
   .note-slot:hover { border-color: #444; }
@@ -166,6 +168,39 @@
     </div>
   </div>
 
+  <!-- MOUSE INTERACTION -->
+  <div>
+    <div class="section-label">Mouse Mode</div>
+    <div class="mode-row">
+      <button class="mmode-btn active" data-mmode="0">Off</button>
+      <button class="mmode-btn" data-mmode="1">Force</button>
+      <button class="mmode-btn" data-mmode="2">Cage</button>
+      <button class="mmode-btn" data-mmode="3">Paddles</button>
+    </div>
+    <div class="knob-row mmrow" data-for="1" style="display:none">
+      <label>Strength</label>
+      <input type="range" id="force-strength" min="0" max="100" value="30" step="1">
+      <span class="val" id="force-strength-val">30</span>
+    </div>
+    <div class="knob-row mmrow" data-for="1" style="display:none">
+      <label>Direction</label>
+      <div style="flex:2;display:flex;align-items:center;gap:8px">
+        <input type="checkbox" id="force-attract" style="width:14px;height:14px;accent-color:#7a5aa5;cursor:pointer">
+        <span style="color:#666;font-size:10px" id="force-attract-label">Repel</span>
+      </div>
+    </div>
+    <div class="knob-row mmrow" data-for="2" style="display:none">
+      <label>Cage Size</label>
+      <input type="range" id="cage-radius" min="40" max="400" value="120" step="5">
+      <span class="val" id="cage-radius-val">120</span>
+    </div>
+    <div class="knob-row mmrow" data-for="3" style="display:none">
+      <label>Paddle Size</label>
+      <input type="range" id="paddle-size" min="30" max="300" value="90" step="5">
+      <span class="val" id="paddle-size-val">90</span>
+    </div>
+  </div>
+
   <!-- NOTE POOL -->
   <div>
     <div class="section-label">Note Pool</div>
@@ -290,7 +325,9 @@ let edgeSlots = {
 }
 
 let playing=false, balls=[], bricks=[], spawnTimer=0
-let params = {ballSpeed:6,gravity:0.3,numBalls:1,spawnRate:1/0.7,maxBricks:24,noteLen:200,midiChannel:1,physicsMode:'billiards',speedToVel:true}
+let params = {ballSpeed:6,gravity:0.3,numBalls:1,spawnRate:1/0.7,maxBricks:24,noteLen:200,midiChannel:1,physicsMode:'billiards',speedToVel:true,
+  mouseMode:0,forceStrength:30,forceAttract:false,cageRadius:120,paddleSize:90}
+let pluginMouse = {x:0,y:0,active:false}
 
 const canvas = document.getElementById('sim')
 const ctx = canvas.getContext('2d')
@@ -665,6 +702,30 @@ function render() {
     ctx.beginPath();ctx.arc(ball.x,ball.y,ball.r,0,Math.PI*2)
     ctx.fillStyle='#fff';ctx.shadowColor='#88aaff';ctx.shadowBlur=16;ctx.fill();ctx.shadowBlur=0
   }
+
+  // ── Mouse mode overlays (plugin only; physics runs in C++) ──
+  if(typeof pluginMode!=='undefined' && pluginMode && params.mouseMode>0 && pluginMouse.active){
+    const mx=pluginMouse.x, my=pluginMouse.y, W=canvas.width, H=canvas.height
+    ctx.save()
+    if(params.mouseMode===1){
+      const col = params.forceAttract ? '#7ad0ff' : '#ff7a7a'
+      ctx.strokeStyle=col; ctx.lineWidth=1.5
+      for(let i=1;i<=3;i++){ ctx.globalAlpha=.45/i; ctx.beginPath(); ctx.arc(mx,my, i*20*(params.forceStrength/100*0.8+0.5),0,Math.PI*2); ctx.stroke() }
+      ctx.globalAlpha=1; ctx.fillStyle=col; ctx.beginPath(); ctx.arc(mx,my,4,0,Math.PI*2); ctx.fill()
+    } else if(params.mouseMode===2){
+      ctx.strokeStyle='#c8a8ff'; ctx.globalAlpha=.65; ctx.lineWidth=2; ctx.setLineDash([6,5])
+      ctx.beginPath(); ctx.arc(mx,my,params.cageRadius,0,Math.PI*2); ctx.stroke()
+    } else if(params.mouseMode===3){
+      ctx.fillStyle='#c8a8ff'; ctx.globalAlpha=.9
+      const half=params.paddleSize/2, th=10, inset=16
+      const cx=Math.max(half,Math.min(W-half,mx)), cy=Math.max(half,Math.min(H-half,my))
+      ctx.fillRect(cx-half, inset-th/2, params.paddleSize, th)
+      ctx.fillRect(cx-half, H-inset-th/2, params.paddleSize, th)
+      ctx.fillRect(W-inset-th/2, cy-half, th, params.paddleSize)
+      ctx.fillRect(inset-th/2, cy-half, th, params.paddleSize)
+    }
+    ctx.restore()
+  }
 }
 
 // Web Worker ticker — Chrome doesn't throttle workers in background tabs
@@ -672,7 +733,10 @@ const workerBlob = new Blob([`setInterval(()=>postMessage(performance.now()),${1
 const ticker = new Worker(URL.createObjectURL(workerBlob))
 ticker.onmessage = e => update(e.data)
 
-function renderLoop(){render();requestAnimationFrame(renderLoop)}
+function renderLoop(){
+  if(typeof pluginMode!=='undefined' && pluginMode) juceInvoke('setMouse', pluginMouse.x, pluginMouse.y, pluginMouse.active)
+  render(); requestAnimationFrame(renderLoop)
+}
 requestAnimationFrame(renderLoop)
 
 // ── WebSocket MIDI (preferred on Windows) ──
@@ -789,7 +853,9 @@ function buildConfig(){
   return {
     params:{ ballSpeed:params.ballSpeed, gravity:params.gravity, numBalls:params.numBalls,
       spawnRate:params.spawnRate, maxBricks:params.maxBricks, noteLen:params.noteLen,
-      midiChannel:params.midiChannel, mode: params.physicsMode==='hail'?1:0, speedToVel:params.speedToVel },
+      midiChannel:params.midiChannel, mode: params.physicsMode==='hail'?1:0, speedToVel:params.speedToVel,
+      mouseMode:params.mouseMode, forceStrength:params.forceStrength, forceAttract:params.forceAttract,
+      cageRadius:params.cageRadius, paddleSize:params.paddleSize },
     slots: noteSlots.map(s=>({ id:slotNumId(s), note:s.note, prob:s.prob, enabled:s.enabled,
       velLock:s.velLock||0, durability:s.durability||1, shape:shapeToInt(s.shape||'rect'),
       shapeW:s.shapeW||72, shapeH:s.shapeH||22, shapeR:s.shapeR||20, shapeSides:s.shapeSides||6, shapeSize:s.shapeSize||28,
@@ -811,10 +877,20 @@ function refreshControls(){
   const mcv=document.getElementById('midi-channel-val'); if(mcv)mcv.textContent=params.midiChannel
   const sv=document.getElementById('speed-vel'); if(sv)sv.checked=params.speedToVel
   const svl=document.getElementById('speed-vel-label'); if(svl)svl.textContent=params.speedToVel?'On':'Off'
-  document.querySelectorAll('.mode-btn').forEach(b=>b.classList.toggle('active', b.dataset.mode===params.physicsMode))
+  document.querySelectorAll('.mode-btn[data-mode]').forEach(b=>b.classList.toggle('active', b.dataset.mode===params.physicsMode))
   const gr=document.getElementById('gravity-row'); if(gr)gr.style.display=params.physicsMode==='billiards'?'none':'flex'
   const pb=document.getElementById('play-btn'); if(pb)pb.textContent=playing?'⏸ Pause':'▶ Play'
+  setR('force-strength',params.forceStrength,'force-strength-val')
+  setR('cage-radius',params.cageRadius,'cage-radius-val')
+  setR('paddle-size',params.paddleSize,'paddle-size-val')
+  const fa=document.getElementById('force-attract'); if(fa)fa.checked=params.forceAttract
+  const fal=document.getElementById('force-attract-label'); if(fal)fal.textContent=params.forceAttract?'Attract':'Repel'
+  updateMouseModeUI()
   renderNoteSlots(); renderEdgeSlots()
+}
+function updateMouseModeUI(){
+  document.querySelectorAll('.mmode-btn').forEach(b=>b.classList.toggle('active', (+b.dataset.mmode)===params.mouseMode))
+  document.querySelectorAll('.mmrow').forEach(r=>{ r.style.display = (+r.dataset.for)===params.mouseMode ? 'flex' : 'none' })
 }
 function restoreUiState(st){
   const p=st.params||{}
@@ -827,6 +903,11 @@ function restoreUiState(st){
   if(p.midiChannel!=null)params.midiChannel=p.midiChannel
   if(p.speedToVel!=null)params.speedToVel=!!p.speedToVel
   if(p.mode!=null)params.physicsMode = p.mode===1?'hail':'billiards'
+  if(p.mouseMode!=null)params.mouseMode=p.mouseMode
+  if(p.forceStrength!=null)params.forceStrength=p.forceStrength
+  if(p.forceAttract!=null)params.forceAttract=!!p.forceAttract
+  if(p.cageRadius!=null)params.cageRadius=p.cageRadius
+  if(p.paddleSize!=null)params.paddleSize=p.paddleSize
   if(Array.isArray(st.slots)){
     noteSlots = st.slots.filter(s=>!s.held).map(s=>({ id:s.id, note:s.note, prob:s.prob, enabled:!!s.enabled,
       velLock:s.velLock||0, durability:s.durability||1, color:s.color||'#4a9af5',
@@ -1108,6 +1189,21 @@ document.querySelectorAll('.edge-slot').forEach(el=>{
 })
 
 renderNoteSlots();renderEdgeSlots();drawPiano(60)
+
+// ── Mouse mode controls ──
+document.querySelectorAll('.mmode-btn').forEach(btn=>{
+  btn.addEventListener('click',()=>{ params.mouseMode=+btn.dataset.mmode; updateMouseModeUI() })
+})
+wireRange('force-strength','force-strength-val','forceStrength')
+wireRange('cage-radius','cage-radius-val','cageRadius')
+wireRange('paddle-size','paddle-size-val','paddleSize')
+document.getElementById('force-attract').addEventListener('change',e=>{
+  params.forceAttract=e.target.checked
+  document.getElementById('force-attract-label').textContent=e.target.checked?'Attract':'Repel'
+})
+canvas.addEventListener('mousemove',e=>{ pluginMouse.x=e.offsetX; pluginMouse.y=e.offsetY; pluginMouse.active=true })
+canvas.addEventListener('mouseenter',e=>{ pluginMouse.x=e.offsetX; pluginMouse.y=e.offsetY; pluginMouse.active=true })
+canvas.addEventListener('mouseleave',()=>{ pluginMouse.active=false })
 
 function wireRange(id,valId,key,fmt){
   const el=document.getElementById(id),ve=document.getElementById(valId)

@@ -23,6 +23,11 @@ namespace
         P.midiChannel = asInt   (p.getProperty ("midiChannel", {}), P.midiChannel);
         P.mode        = asInt   (p.getProperty ("mode",        {}), P.mode);
         P.speedToVel  = asBool  (p.getProperty ("speedToVel",  {}), P.speedToVel);
+        P.mouseMode     = asInt   (p.getProperty ("mouseMode",     {}), P.mouseMode);
+        P.forceStrength = asFloat (p.getProperty ("forceStrength", {}), P.forceStrength);
+        P.forceAttract  = asBool  (p.getProperty ("forceAttract",  {}), P.forceAttract);
+        P.cageRadius    = asFloat (p.getProperty ("cageRadius",    {}), P.cageRadius);
+        P.paddleSize    = asFloat (p.getProperty ("paddleSize",    {}), P.paddleSize);
 
         if (auto* arr = v.getProperty ("slots", juce::var()).getArray())
         {
@@ -114,7 +119,8 @@ void BreakoutMidiProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     if      (play == 0) sim.setPlaying (false);
     else if (play == 1) sim.setPlaying (true);
 
-    // ---- Advance simulation at a fixed 60 Hz, regardless of block size ----
+    // ---- Feed cursor + advance simulation at a fixed 60 Hz ----
+    sim.setMouse (mouseX.load(), mouseY.load(), mouseActive.load());
     blockNotes.clear();
     constexpr double fixed = 1.0 / 60.0;
     stepAccumulator += numSamples / sampleRate;
@@ -162,6 +168,11 @@ void BreakoutMidiProcessor::setConfig (const Simulation::Config& cfg)
 
 void BreakoutMidiProcessor::setPlaying (bool shouldPlay) { pendingPlay.store (shouldPlay ? 1 : 0); }
 void BreakoutMidiProcessor::requestReset()               { resetRequested.store (true); }
+
+void BreakoutMidiProcessor::setMouse (float x, float y, bool active)
+{
+    mouseX.store (x); mouseY.store (y); mouseActive.store (active);
+}
 
 void BreakoutMidiProcessor::setStateFromVar (const juce::var& v)
 {

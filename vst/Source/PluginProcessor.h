@@ -50,6 +50,7 @@ public:
     void setConfig (const Simulation::Config& cfg);
     void setPlaying (bool shouldPlay);
     void requestReset();
+    void setMouse (float x, float y, bool active); // cursor for mouse modes
 
     // Full UI/config blob: applies to the sim and is stored for persistence
     // (project save/load) and for restoring the UI when the editor reopens.
@@ -74,6 +75,9 @@ private:
 
     std::atomic<int>    pendingPlay { -1 };   // -1 none, 0 stop, 1 play
     std::atomic<bool>   resetRequested { false };
+
+    std::atomic<float>  mouseX { 0.0f }, mouseY { 0.0f };
+    std::atomic<bool>   mouseActive { false };
 
     // Persisted UI/config blob (message-thread access; guarded for safety).
     juce::CriticalSection stateLock;
