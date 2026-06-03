@@ -856,19 +856,23 @@ if(juceBackend){
     if(d.on) addHeldNote(d.note, d.vel); else removeHeldNote(d.note)
   })
 
-  // Render from the C++ simulation snapshot (balls + bricks as flat arrays)
+  // Render from the C++ simulation snapshot. Balls arrive every frame; bricks
+  // arrive ~20fps and are cached (only rebuilt when a brick spawns/despawns).
+  let cachedBricks=[], cachedKey=''
   juceBackend.addEventListener('simState', s => {
     if(!s) return
-    const sb = s.bricks||[], nb=(sb.length/6)|0, nbricks=[]
-    for(let i=0;i<nb;i++){
-      const o=i*6, slotId=sb[o], cx=sb[o+1], cy=sb[o+2], alive=sb[o+3], hitsLeft=sb[o+4], flash=sb[o+5]
-      const slot = noteSlots.find(x=>slotNumId(x)===slotId) || {note:60,color:'#8888ff',...defaultShape()}
-      const brick = makeBrick(slot, cx, cy)
-      brick.alive=!!alive; brick.hitsLeft=hitsLeft; brick.flash=flash
-      nbricks.push(brick)
-      if(flash>=11 && slot.color){ noteFlash.color=slot.color; noteFlash.t=1 } // bg flash on fresh hit
+    if(s.bricks){
+      const sb=s.bricks, n=(sb.length/6)|0
+      let key=n+':'
+      for(let i=0;i<n;i++){ const o=i*6; key += sb[o]+','+(sb[o+1]|0)+','+(sb[o+2]|0)+';' }
+      if(key!==cachedKey){
+        cachedBricks=[]
+        for(let i=0;i<n;i++){ const o=i*6; const slot=noteSlots.find(x=>slotNumId(x)===sb[o])||{note:60,color:'#8888ff',...defaultShape()}; cachedBricks.push(makeBrick(slot, sb[o+1], sb[o+2])) }
+        cachedKey=key
+      }
+      for(let i=0;i<n;i++){ const o=i*6, br=cachedBricks[i]; if(!br)continue; br.alive=!!sb[o+3]; br.hitsLeft=sb[o+4]; br.flash=sb[o+5]; if(sb[o+5]>=7 && br.slot.color){ noteFlash.color=br.slot.color; noteFlash.t=1 } }
+      bricks = cachedBricks
     }
-    bricks = nbricks
     const ba = s.balls||[], nball=(ba.length/2)|0, nballs=[]
     for(let i=0;i<nball;i++){
       const x=ba[i*2], y=ba[i*2+1]
@@ -893,7 +897,7 @@ if(juceBackend){
     if(__inited) return; __inited=true
     if(st && Array.isArray(st.slots) && st.slots.length) restoreUiState(st)
     syncConfig(true)
-    setInterval(()=>syncConfig(false), 200)
+    setInterval(()=>syncConfig(false), 60)   // low-latency push of UI changes
   }
   juceCall('getState').then(initPluginSync)
   setTimeout(()=>initPluginSync(null), 1500)

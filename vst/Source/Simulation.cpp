@@ -243,14 +243,26 @@ bool Simulation::ballBrickCollision (Ball& ball, Brick& brick, std::vector<NoteE
 
 void Simulation::applyConfig (const Config& cfg)
 {
-    const int prevMode = config.params.mode;
+    const int   prevMode  = config.params.mode;
+    const float prevSpeed = config.params.ballSpeed;
     config = cfg;
 
-    // keep ball count in sync; a mode change re-seeds balls so they fit
-    if (cfg.params.mode != prevMode)
-        reset();
-    else
-        syncBallCount();
+    // a mode change re-seeds balls so they fit the new layout
+    if (cfg.params.mode != prevMode) { reset(); return; }
+
+    syncBallCount();
+
+    // ball speed is per-ball state, so apply a change to every live ball now
+    // (otherwise a ball only picks up the new speed on its next collision)
+    if (std::abs (cfg.params.ballSpeed - prevSpeed) > 1.0e-4f)
+    {
+        for (auto& b : balls)
+        {
+            const float s = std::sqrt (b.vx * b.vx + b.vy * b.vy);
+            if (s > 0) { b.vx = b.vx / s * cfg.params.ballSpeed; b.vy = b.vy / s * cfg.params.ballSpeed; }
+            else       { b.vx = cfg.params.ballSpeed; b.vy = 0.0f; }
+        }
+    }
 }
 
 void Simulation::setPlaying (bool shouldPlay)

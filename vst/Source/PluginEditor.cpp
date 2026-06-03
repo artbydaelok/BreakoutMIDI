@@ -69,15 +69,20 @@ void BreakoutMidiEditor::timerCallback()
         webView.emitEventIfBrowserIsVisible ("midiIn", juce::var (obj));
     }
 
-    // Render snapshot -> UI at ~30 fps
-    if ((++frameCounter & 1) == 0)
+    // Render snapshot -> UI. Balls move every frame (60fps); bricks are static
+    // so they only need ~20fps (and JS caches them to avoid per-frame rebuilds).
+    const auto snap = proc.getRenderSnapshot();
+
+    juce::Array<juce::var> balls;
+    balls.ensureStorageAllocated ((int) snap.balls.size() * 2);
+    for (const auto& b : snap.balls) { balls.add (b.x); balls.add (b.y); }
+
+    auto* o = new juce::DynamicObject();
+    o->setProperty ("playing", snap.playing);
+    o->setProperty ("balls", juce::var (balls));
+
+    if ((frameCounter % 3) == 0)
     {
-        const auto snap = proc.getRenderSnapshot();
-
-        juce::Array<juce::var> balls;
-        balls.ensureStorageAllocated ((int) snap.balls.size() * 2);
-        for (const auto& b : snap.balls) { balls.add (b.x); balls.add (b.y); }
-
         juce::Array<juce::var> bricks;
         bricks.ensureStorageAllocated ((int) snap.bricks.size() * 6);
         for (const auto& b : snap.bricks)
@@ -85,13 +90,11 @@ void BreakoutMidiEditor::timerCallback()
             bricks.add (b.slotId); bricks.add (b.cx); bricks.add (b.cy);
             bricks.add (b.alive ? 1 : 0); bricks.add (b.hitsLeft); bricks.add (b.flash);
         }
-
-        auto* o = new juce::DynamicObject();
-        o->setProperty ("playing", snap.playing);
-        o->setProperty ("balls",  juce::var (balls));
         o->setProperty ("bricks", juce::var (bricks));
-        webView.emitEventIfBrowserIsVisible ("simState", juce::var (o));
     }
+    ++frameCounter;
+
+    webView.emitEventIfBrowserIsVisible ("simState", juce::var (o));
 }
 
 //==============================================================================
