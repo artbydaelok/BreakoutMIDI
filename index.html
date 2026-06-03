@@ -299,7 +299,7 @@ function resizeCanvas() {
   canvas.width=w.clientWidth-32; canvas.height=w.clientHeight-32
 }
 resizeCanvas()
-window.addEventListener('resize', ()=>{ resizeCanvas(); if(playing) resetSim() })
+window.addEventListener('resize', ()=>{ resizeCanvas(); if(playing&&!pluginMode) resetSim() })
 
 const BRICK_W=72,BRICK_H=22,BRICK_PAD=6,BALL_R=7
 
@@ -512,6 +512,7 @@ function ballBrickCollision(ball, brick) {
 
 let lastTime=null
 function update(ts) {
+  if(pluginMode) return   // physics runs in C++; JS only renders snapshots
   if(!lastTime) lastTime=ts
   const dt=Math.min((ts-lastTime)/1000,.05); lastTime=ts
   if(!playing) return
@@ -771,16 +772,73 @@ async function initMIDI(){
   }catch(e){statusEl.textContent='MIDI error: '+e.message;statusEl.className='error'}
 }
 
-// ── JUCE plugin bridge (active only inside the VST/AU WebView) ──
+// ── JUCE plugin bridge ──
+// In the VST/AU the physics runs in C++ and keeps going with the window closed.
+// Here JS is a control surface (push config to C++) + renderer (draw snapshots).
 const juceBackend = (window.__JUCE__ && window.__JUCE__.backend) ? window.__JUCE__.backend : null
+const pluginMode = !!juceBackend
+let pluginBallTrails = []
+
+function juceInvoke(name, ...p){ juceBackend.emitEvent('__juce__invoke', { name, params:p, resultId:-1 }) }
+function slotNumId(s){ return typeof s.id==='number' ? s.id : (100000 + (s.note|0)) }
+function shapeToInt(s){ return s==='circle'?1 : s==='polygon'?2 : 0 }
+
+function buildConfig(){
+  return {
+    params:{ ballSpeed:params.ballSpeed, gravity:params.gravity, numBalls:params.numBalls,
+      spawnRate:params.spawnRate, maxBricks:params.maxBricks, noteLen:params.noteLen,
+      midiChannel:params.midiChannel, mode: params.physicsMode==='hail'?1:0, speedToVel:params.speedToVel },
+    slots: noteSlots.map(s=>({ id:slotNumId(s), note:s.note, prob:s.prob, enabled:s.enabled,
+      velLock:s.velLock||0, durability:s.durability||1, shape:shapeToInt(s.shape||'rect'),
+      shapeW:s.shapeW||72, shapeH:s.shapeH||22, shapeR:s.shapeR||20, shapeSides:s.shapeSides||6, shapeSize:s.shapeSize||28 })),
+    edges:[edgeSlots.top,edgeSlots.right,edgeSlots.bottom,edgeSlots.left].map(e=>({note:e.note,enabled:e.enabled,velLock:e.velLock||0})),
+    width: canvas.width, height: canvas.height
+  }
+}
+let lastConfigStr = ''
+function syncConfig(force){
+  if(!pluginMode) return
+  const str = JSON.stringify(buildConfig())
+  if(force || str !== lastConfigStr){ lastConfigStr = str; juceInvoke('setConfig', JSON.parse(str)) }
+}
+function juceSetPlaying(p){ if(pluginMode) juceInvoke('setPlaying', !!p) }
+function juceReset(){ if(pluginMode) juceInvoke('resetSim') }
+
 if(juceBackend){
   juceBackend.addEventListener('midiIn', d => {
     if(!d) return
     if(d.on) addHeldNote(d.note, d.vel); else removeHeldNote(d.note)
   })
-}
-function juceSendMidi(note,vel,channel,duration){
-  juceBackend.emitEvent('__juce__invoke', { name:'sendMidi', params:[note,vel,channel,duration], resultId:-1 })
+
+  // Render from the C++ simulation snapshot (balls + bricks as flat arrays)
+  juceBackend.addEventListener('simState', s => {
+    if(!s) return
+    const sb = s.bricks||[], nb=(sb.length/6)|0, nbricks=[]
+    for(let i=0;i<nb;i++){
+      const o=i*6, slotId=sb[o], cx=sb[o+1], cy=sb[o+2], alive=sb[o+3], hitsLeft=sb[o+4], flash=sb[o+5]
+      const slot = noteSlots.find(x=>slotNumId(x)===slotId) || {note:60,color:'#8888ff',...defaultShape()}
+      const brick = makeBrick(slot, cx, cy)
+      brick.alive=!!alive; brick.hitsLeft=hitsLeft; brick.flash=flash
+      nbricks.push(brick)
+      if(flash>=11 && slot.color){ noteFlash.color=slot.color; noteFlash.t=1 } // bg flash on fresh hit
+    }
+    bricks = nbricks
+    const ba = s.balls||[], nball=(ba.length/2)|0, nballs=[]
+    for(let i=0;i<nball;i++){
+      const x=ba[i*2], y=ba[i*2+1]
+      let tr = pluginBallTrails[i] || []
+      tr.push({x,y}); if(tr.length>18) tr.shift()
+      pluginBallTrails[i]=tr
+      nballs.push({x,y,r:BALL_R,trail:tr})
+    }
+    pluginBallTrails.length = nball
+    balls = nballs
+    playing = !!s.playing
+    const pb=document.getElementById('play-btn'); if(pb) pb.textContent = playing?'⏸ Pause':'▶ Play'
+  })
+
+  setInterval(()=>syncConfig(false), 200)   // push UI changes to C++
+  setTimeout(()=>syncConfig(true), 300)     // initial push once UI is built
 }
 
 function triggerNote(slot,impactSpeed){
@@ -790,8 +848,8 @@ function triggerNote(slot,impactSpeed){
   else if(params.speedToVel) vel=clamp(Math.round((impactSpeed/20)*107+20),1,127)
   else vel=100
 
-  // 0. JUCE plugin (VST/AU) native bridge
-  if(juceBackend){ juceSendMidi(slot.note,vel,params.midiChannel,params.noteLen); return }
+  // 0. JUCE plugin: notes are generated in C++; nothing to send from JS
+  if(juceBackend){ return }
 
   // 1. Electron IPC
   if(window.midi){ window.midi.sendNote(slot.note,vel,params.midiChannel,params.noteLen); return }
@@ -1024,16 +1082,17 @@ document.querySelectorAll('.mode-btn').forEach(btn=>{
     document.querySelectorAll('.mode-btn').forEach(b=>b.classList.remove('active'))
     btn.classList.add('active');params.physicsMode=btn.dataset.mode
     gravityRow.style.display=params.physicsMode==='billiards'?'none':'flex'
-    if(playing)resetSim()
+    if(playing&&!pluginMode)resetSim()
   })
 })
 
 const playBtn=document.getElementById('play-btn')
 playBtn.addEventListener('click',()=>{
   playing=!playing;playBtn.textContent=playing?'⏸ Pause':'▶ Play'
+  if(pluginMode){ juceSetPlaying(playing); return }
   if(playing&&balls.length===0)resetSim();lastTime=null
 })
-document.getElementById('reset-btn').addEventListener('click',()=>{bricks=[];resetSim();spawnTimer=0})
+document.getElementById('reset-btn').addEventListener('click',()=>{ if(pluginMode){ juceReset(); return } bricks=[];resetSim();spawnTimer=0})
 
 document.getElementById('test-midi-btn').addEventListener('click',()=>{
   const result = document.getElementById('test-midi-result')

@@ -32,7 +32,8 @@ juce_add_binary_data(BreakoutMIDIData
 
 target_sources(BreakoutMIDI PRIVATE
     Source/PluginProcessor.cpp
-    Source/PluginEditor.cpp)
+    Source/PluginEditor.cpp
+    Source/Simulation.cpp)
 
 target_compile_definitions(BreakoutMIDI PUBLIC
     JUCE_WEB_BROWSER=1

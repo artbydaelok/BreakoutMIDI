@@ -2,18 +2,17 @@
 
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <juce_audio_basics/juce_audio_basics.h>
-#include <juce_audio_devices/juce_audio_devices.h>
+#include <atomic>
+#include "Simulation.h"
 
 //==============================================================================
 // BreakoutMIDI plugin processor.
 //
-// The physics/UI lives in a WebView (the existing index.html). When a brick is
-// hit, JS calls the native `sendMidi` function which lands in enqueueNote() on
-// the message thread. Notes are buffered in a MidiMessageCollector and drained
-// into the host's MIDI stream inside processBlock() on the audio thread.
-//
-// Incoming MIDI from the host is pushed onto a lock-free FIFO from the audio
-// thread; the editor polls it on a timer and forwards held notes to the UI.
+// The physics simulation now lives here in C++ and is stepped on the audio
+// thread, so it keeps running and emitting MIDI whether or not the editor
+// window is open. The WebView is purely a control surface + renderer:
+//   UI  -> setConfig / setPlaying / requestReset   (message thread -> staged)
+//   sim -> getRenderSnapshot                        (audio thread -> message)
 //==============================================================================
 class BreakoutMidiProcessor : public juce::AudioProcessor
 {
@@ -47,15 +46,40 @@ public:
     void getStateInformation (juce::MemoryBlock&) override {}
     void setStateInformation (const void*, int) override {}
 
-    //== Bridge to the WebView UI ==============================================
-    // Called on the message thread when JS fires a brick/edge note.
-    void enqueueNote (int note, int vel, int channel, int durationMs);
+    //== Bridge: UI (message thread) -> simulation =============================
+    void setConfig (const Simulation::Config& cfg);
+    void setPlaying (bool shouldPlay);
+    void requestReset();
 
-    // Called on the message thread (editor timer) to drain host MIDI input.
+    //== Bridge: simulation -> UI =============================================
+    // Copies the latest published render state (allocates on the calling/
+    // message thread, never on the audio thread).
+    Simulation::RenderState getRenderSnapshot();
+
+    //== Host MIDI input -> UI (held notes) ===================================
     bool popMidiIn (MidiInEvent& out);
 
 private:
-    juce::MidiMessageCollector midiCollector;
+    Simulation sim;
+
+    // Staged config (message -> audio).
+    juce::SpinLock      configLock;
+    Simulation::Config  pendingConfig;
+    bool                configDirty = false;
+
+    std::atomic<int>    pendingPlay { -1 };   // -1 none, 0 stop, 1 play
+    std::atomic<bool>   resetRequested { false };
+
+    // Published render snapshot (audio -> message), preallocated.
+    juce::SpinLock           snapLock;
+    Simulation::RenderState  published;
+
+    double sampleRate = 44100.0;
+    double stepAccumulator = 0.0;
+
+    std::vector<Simulation::NoteEvent> blockNotes;        // scratch, per block
+    struct ActiveNote { int channel; int note; int samplesRemaining; };
+    std::vector<ActiveNote> activeNotes;                  // pending note-offs
 
     // Lock-free SPSC ring for host MIDI -> UI.
     static constexpr int midiInCapacity = 1024;
