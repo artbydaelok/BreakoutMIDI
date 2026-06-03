@@ -552,8 +552,31 @@ function update(ts) {
   bricks=bricks.filter(b=>{b.flash=Math.max(0,b.flash-1);return b.alive||b.flash>0})
 }
 
+// Background flash — pulses the colour of the most recently played note
+let noteFlash = { color:'#4a9af5', t:0 }
+function hexToRgba(hex, a){
+  let h = (hex||'#4a9af5').replace('#','')
+  if(h.length===3) h = h.split('').map(c=>c+c).join('')
+  const n = parseInt(h,16)
+  return `rgba(${(n>>16)&255},${(n>>8)&255},${n&255},${a})`
+}
+
 function render() {
   ctx.clearRect(0,0,canvas.width,canvas.height)
+
+  // note flash: glow the canvas with the most recent note's colour, then fade
+  if(noteFlash.t > 0.004){
+    const a = noteFlash.t, cx = canvas.width/2, cy = canvas.height/2
+    const g = ctx.createRadialGradient(cx, cy, Math.min(canvas.width,canvas.height)*0.05,
+                                       cx, cy, Math.max(canvas.width,canvas.height)*0.75)
+    g.addColorStop(0, hexToRgba(noteFlash.color, 0.30*a))
+    g.addColorStop(1, hexToRgba(noteFlash.color, 0))
+    ctx.fillStyle = g; ctx.fillRect(0,0,canvas.width,canvas.height)
+    ctx.globalAlpha = 0.10*a; ctx.fillStyle = noteFlash.color
+    ctx.fillRect(0,0,canvas.width,canvas.height); ctx.globalAlpha = 1
+    noteFlash.t *= 0.90
+  }
+
   ctx.strokeStyle='#1a1a1a';ctx.lineWidth=1
   for(let x=0;x<canvas.width;x+=40){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,canvas.height);ctx.stroke()}
   for(let y=0;y<canvas.height;y+=40){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(canvas.width,y);ctx.stroke()}
@@ -724,6 +747,7 @@ function initWebSocket() {
 
 async function initMIDI(){
   const statusEl=document.getElementById('midi-status')
+  if(juceBackend){statusEl.textContent='MIDI via host ✓';statusEl.className='connected';return}
   if(window.midi){const{ok,label}=await window.midi.getStatus();statusEl.textContent=label;statusEl.className=ok?'connected':'error';return}
   if(!navigator.requestMIDIAccess){statusEl.textContent='Web MIDI not supported — use Chrome';statusEl.className='error';return}
   try{
@@ -747,11 +771,27 @@ async function initMIDI(){
   }catch(e){statusEl.textContent='MIDI error: '+e.message;statusEl.className='error'}
 }
 
+// ── JUCE plugin bridge (active only inside the VST/AU WebView) ──
+const juceBackend = (window.__JUCE__ && window.__JUCE__.backend) ? window.__JUCE__.backend : null
+if(juceBackend){
+  juceBackend.addEventListener('midiIn', d => {
+    if(!d) return
+    if(d.on) addHeldNote(d.note, d.vel); else removeHeldNote(d.note)
+  })
+}
+function juceSendMidi(note,vel,channel,duration){
+  juceBackend.emitEvent('__juce__invoke', { name:'sendMidi', params:[note,vel,channel,duration], resultId:-1 })
+}
+
 function triggerNote(slot,impactSpeed){
+  if(slot.color){ noteFlash.color = slot.color; noteFlash.t = 1 }
   let vel
   if(slot.velLock>0) vel=slot.velLock
   else if(params.speedToVel) vel=clamp(Math.round((impactSpeed/20)*107+20),1,127)
   else vel=100
+
+  // 0. JUCE plugin (VST/AU) native bridge
+  if(juceBackend){ juceSendMidi(slot.note,vel,params.midiChannel,params.noteLen); return }
 
   // 1. Electron IPC
   if(window.midi){ window.midi.sendNote(slot.note,vel,params.midiChannel,params.noteLen); return }
