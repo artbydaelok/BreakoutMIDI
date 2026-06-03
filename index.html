@@ -780,6 +780,8 @@ const pluginMode = !!juceBackend
 let pluginBallTrails = []
 
 function juceInvoke(name, ...p){ juceBackend.emitEvent('__juce__invoke', { name, params:p, resultId:-1 }) }
+let __jReq=0; const __jPend={}
+function juceCall(name, ...p){ return new Promise(res=>{ const id=__jReq++; __jPend[id]=res; juceBackend.emitEvent('__juce__invoke',{name,params:p,resultId:id}) }) }
 function slotNumId(s){ return typeof s.id==='number' ? s.id : (100000 + (s.note|0)) }
 function shapeToInt(s){ return s==='circle'?1 : s==='polygon'?2 : 0 }
 
@@ -790,10 +792,54 @@ function buildConfig(){
       midiChannel:params.midiChannel, mode: params.physicsMode==='hail'?1:0, speedToVel:params.speedToVel },
     slots: noteSlots.map(s=>({ id:slotNumId(s), note:s.note, prob:s.prob, enabled:s.enabled,
       velLock:s.velLock||0, durability:s.durability||1, shape:shapeToInt(s.shape||'rect'),
-      shapeW:s.shapeW||72, shapeH:s.shapeH||22, shapeR:s.shapeR||20, shapeSides:s.shapeSides||6, shapeSize:s.shapeSize||28 })),
-    edges:[edgeSlots.top,edgeSlots.right,edgeSlots.bottom,edgeSlots.left].map(e=>({note:e.note,enabled:e.enabled,velLock:e.velLock||0})),
-    width: canvas.width, height: canvas.height
+      shapeW:s.shapeW||72, shapeH:s.shapeH||22, shapeR:s.shapeR||20, shapeSides:s.shapeSides||6, shapeSize:s.shapeSize||28,
+      color:s.color, held:!!s.held })),
+    edges:[edgeSlots.top,edgeSlots.right,edgeSlots.bottom,edgeSlots.left].map(e=>({note:e.note,enabled:e.enabled,velLock:e.velLock||0,color:e.color})),
+    width: canvas.width, height: canvas.height, playing: !!playing
   }
+}
+function intToShape(i){ return i===1?'circle' : i===2?'polygon' : 'rect' }
+function refreshControls(){
+  const setR=(id,val,valId,fmt)=>{ const el=document.getElementById(id); if(el)el.value=val; const ve=valId&&document.getElementById(valId); if(ve)ve.innerHTML=fmt?fmt(val):val }
+  setR('ball-speed',params.ballSpeed,'ball-speed-val')
+  setR('gravity',params.gravity,'gravity-val')
+  setR('num-balls',params.numBalls,'num-balls-val')
+  const bps=1/params.spawnRate; setR('spawn-rate',bps,'spawn-rate-val',v=>`${(+v).toFixed(1)}<small>/s</small>`)
+  setR('max-bricks',params.maxBricks,'max-bricks-val')
+  setR('note-len',params.noteLen,'note-len-val',v=>`${v}<small>ms</small>`)
+  const mc=document.getElementById('midi-channel'); if(mc)mc.value=params.midiChannel
+  const mcv=document.getElementById('midi-channel-val'); if(mcv)mcv.textContent=params.midiChannel
+  const sv=document.getElementById('speed-vel'); if(sv)sv.checked=params.speedToVel
+  const svl=document.getElementById('speed-vel-label'); if(svl)svl.textContent=params.speedToVel?'On':'Off'
+  document.querySelectorAll('.mode-btn').forEach(b=>b.classList.toggle('active', b.dataset.mode===params.physicsMode))
+  const gr=document.getElementById('gravity-row'); if(gr)gr.style.display=params.physicsMode==='billiards'?'none':'flex'
+  const pb=document.getElementById('play-btn'); if(pb)pb.textContent=playing?'⏸ Pause':'▶ Play'
+  renderNoteSlots(); renderEdgeSlots()
+}
+function restoreUiState(st){
+  const p=st.params||{}
+  if(p.ballSpeed!=null)params.ballSpeed=p.ballSpeed
+  if(p.gravity!=null)params.gravity=p.gravity
+  if(p.numBalls!=null)params.numBalls=p.numBalls
+  if(p.spawnRate!=null)params.spawnRate=p.spawnRate
+  if(p.maxBricks!=null)params.maxBricks=p.maxBricks
+  if(p.noteLen!=null)params.noteLen=p.noteLen
+  if(p.midiChannel!=null)params.midiChannel=p.midiChannel
+  if(p.speedToVel!=null)params.speedToVel=!!p.speedToVel
+  if(p.mode!=null)params.physicsMode = p.mode===1?'hail':'billiards'
+  if(Array.isArray(st.slots)){
+    noteSlots = st.slots.filter(s=>!s.held).map(s=>({ id:s.id, note:s.note, prob:s.prob, enabled:!!s.enabled,
+      velLock:s.velLock||0, durability:s.durability||1, color:s.color||'#4a9af5',
+      shape:intToShape(s.shape), shapeW:s.shapeW||72, shapeH:s.shapeH||22, shapeR:s.shapeR||20,
+      shapeSides:s.shapeSides||6, shapeSize:s.shapeSize||28 }))
+    nextSlotId = noteSlots.reduce((m,s)=>Math.max(m, (typeof s.id==='number'&&s.id<100000)?s.id:0), 0) + 1
+  }
+  if(Array.isArray(st.edges)){
+    const names=['top','right','bottom','left']
+    st.edges.forEach((e,i)=>{ if(names[i]) edgeSlots[names[i]]={note:e.note,enabled:!!e.enabled,velLock:e.velLock||0,color:e.color||edgeSlots[names[i]].color} })
+  }
+  if(st.playing!=null) playing=!!st.playing
+  refreshControls()
 }
 let lastConfigStr = ''
 function syncConfig(force){
@@ -837,8 +883,20 @@ if(juceBackend){
     const pb=document.getElementById('play-btn'); if(pb) pb.textContent = playing?'⏸ Pause':'▶ Play'
   })
 
-  setInterval(()=>syncConfig(false), 200)   // push UI changes to C++
-  setTimeout(()=>syncConfig(true), 300)     // initial push once UI is built
+  juceBackend.addEventListener('__juce__complete', d => {
+    if(d && __jPend[d.promiseId]){ __jPend[d.promiseId](d.result); delete __jPend[d.promiseId] }
+  })
+  // Restore persisted state from C++ (window reopen / project reload), then
+  // start pushing UI changes. Fallback in case getState doesn't resolve.
+  let __inited=false
+  function initPluginSync(st){
+    if(__inited) return; __inited=true
+    if(st && Array.isArray(st.slots) && st.slots.length) restoreUiState(st)
+    syncConfig(true)
+    setInterval(()=>syncConfig(false), 200)
+  }
+  juceCall('getState').then(initPluginSync)
+  setTimeout(()=>initPluginSync(null), 1500)
 }
 
 function triggerNote(slot,impactSpeed){

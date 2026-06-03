@@ -2,6 +2,67 @@
 #include "PluginEditor.h"
 #include <cmath>
 
+namespace
+{
+    int   asInt   (const juce::var& v, int d)   { return v.isVoid() ? d : (int) v; }
+    float asFloat (const juce::var& v, float d) { return v.isVoid() ? d : (float) (double) v; }
+    bool  asBool  (const juce::var& v, bool d)  { return v.isVoid() ? d : (bool) v; }
+
+    Simulation::Config parseConfig (const juce::var& v)
+    {
+        Simulation::Config c;
+
+        const auto p = v.getProperty ("params", juce::var());
+        auto& P = c.params;
+        P.ballSpeed   = asFloat (p.getProperty ("ballSpeed",   {}), P.ballSpeed);
+        P.gravity     = asFloat (p.getProperty ("gravity",     {}), P.gravity);
+        P.numBalls    = asInt   (p.getProperty ("numBalls",    {}), P.numBalls);
+        P.spawnRate   = asFloat (p.getProperty ("spawnRate",   {}), P.spawnRate);
+        P.maxBricks   = asInt   (p.getProperty ("maxBricks",   {}), P.maxBricks);
+        P.noteLen     = asInt   (p.getProperty ("noteLen",     {}), P.noteLen);
+        P.midiChannel = asInt   (p.getProperty ("midiChannel", {}), P.midiChannel);
+        P.mode        = asInt   (p.getProperty ("mode",        {}), P.mode);
+        P.speedToVel  = asBool  (p.getProperty ("speedToVel",  {}), P.speedToVel);
+
+        if (auto* arr = v.getProperty ("slots", juce::var()).getArray())
+        {
+            c.slots.clear();
+            for (const auto& sv : *arr)
+            {
+                Simulation::Slot s;
+                s.id         = asInt   (sv.getProperty ("id",         {}), 0);
+                s.note       = asInt   (sv.getProperty ("note",       {}), 60);
+                s.prob       = asFloat (sv.getProperty ("prob",       {}), 50.0f);
+                s.enabled    = asBool  (sv.getProperty ("enabled",    {}), true);
+                s.velLock    = asInt   (sv.getProperty ("velLock",    {}), 0);
+                s.durability = asInt   (sv.getProperty ("durability", {}), 1);
+                s.shape      = asInt   (sv.getProperty ("shape",      {}), 0);
+                s.shapeW     = asFloat (sv.getProperty ("shapeW",     {}), 72.0f);
+                s.shapeH     = asFloat (sv.getProperty ("shapeH",     {}), 22.0f);
+                s.shapeR     = asFloat (sv.getProperty ("shapeR",     {}), 20.0f);
+                s.shapeSides = asInt   (sv.getProperty ("shapeSides", {}), 6);
+                s.shapeSize  = asFloat (sv.getProperty ("shapeSize",  {}), 28.0f);
+                c.slots.push_back (s);
+            }
+        }
+
+        if (auto* earr = v.getProperty ("edges", juce::var()).getArray())
+        {
+            for (int i = 0; i < 4 && i < earr->size(); ++i)
+            {
+                const auto ev = (*earr)[i];
+                c.edges[i].note    = asInt  (ev.getProperty ("note",    {}), 48);
+                c.edges[i].enabled = asBool (ev.getProperty ("enabled", {}), false);
+                c.edges[i].velLock = asInt  (ev.getProperty ("velLock", {}), 0);
+            }
+        }
+
+        c.width  = asFloat (v.getProperty ("width",  {}), 1000.0f);
+        c.height = asFloat (v.getProperty ("height", {}), 600.0f);
+        return c;
+    }
+}
+
 //==============================================================================
 BreakoutMidiProcessor::BreakoutMidiProcessor()
     : juce::AudioProcessor (BusesProperties()
@@ -101,6 +162,37 @@ void BreakoutMidiProcessor::setConfig (const Simulation::Config& cfg)
 
 void BreakoutMidiProcessor::setPlaying (bool shouldPlay) { pendingPlay.store (shouldPlay ? 1 : 0); }
 void BreakoutMidiProcessor::requestReset()               { resetRequested.store (true); }
+
+void BreakoutMidiProcessor::setStateFromVar (const juce::var& v)
+{
+    { const juce::ScopedLock sl (stateLock); stateJson = juce::JSON::toString (v); }
+    setConfig (parseConfig (v));
+    if (v.hasProperty ("playing")) setPlaying ((bool) v.getProperty ("playing", false));
+}
+
+juce::var BreakoutMidiProcessor::getStateVar()
+{
+    juce::String json;
+    { const juce::ScopedLock sl (stateLock); json = stateJson; }
+    return json.isEmpty() ? juce::var() : juce::JSON::parse (json);
+}
+
+void BreakoutMidiProcessor::getStateInformation (juce::MemoryBlock& dest)
+{
+    juce::String json;
+    { const juce::ScopedLock sl (stateLock); json = stateJson; }
+    juce::MemoryOutputStream (dest, false).writeText (json, false, false, nullptr);
+}
+
+void BreakoutMidiProcessor::setStateInformation (const void* data, int size)
+{
+    const juce::String json = juce::String::createStringFromData (data, size);
+    if (json.isEmpty()) return;
+    const auto v = juce::JSON::parse (json);
+    { const juce::ScopedLock sl (stateLock); stateJson = json; }
+    setConfig (parseConfig (v));
+    if (v.hasProperty ("playing")) setPlaying ((bool) v.getProperty ("playing", false));
+}
 
 Simulation::RenderState BreakoutMidiProcessor::getRenderSnapshot()
 {

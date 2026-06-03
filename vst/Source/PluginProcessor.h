@@ -43,13 +43,18 @@ public:
     const juce::String getProgramName (int) override { return {}; }
     void changeProgramName (int, const juce::String&) override {}
 
-    void getStateInformation (juce::MemoryBlock&) override {}
-    void setStateInformation (const void*, int) override {}
+    void getStateInformation (juce::MemoryBlock&) override;
+    void setStateInformation (const void*, int) override;
 
     //== Bridge: UI (message thread) -> simulation =============================
     void setConfig (const Simulation::Config& cfg);
     void setPlaying (bool shouldPlay);
     void requestReset();
+
+    // Full UI/config blob: applies to the sim and is stored for persistence
+    // (project save/load) and for restoring the UI when the editor reopens.
+    void      setStateFromVar (const juce::var& v); // message thread
+    juce::var getStateVar();                         // message thread
 
     //== Bridge: simulation -> UI =============================================
     // Copies the latest published render state (allocates on the calling/
@@ -69,6 +74,10 @@ private:
 
     std::atomic<int>    pendingPlay { -1 };   // -1 none, 0 stop, 1 play
     std::atomic<bool>   resetRequested { false };
+
+    // Persisted UI/config blob (message-thread access; guarded for safety).
+    juce::CriticalSection stateLock;
+    juce::String          stateJson;
 
     // Published render snapshot (audio -> message), preallocated.
     juce::SpinLock           snapLock;
