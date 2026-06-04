@@ -94,8 +94,8 @@ void BreakoutMidiEditor::timerCallback()
     const auto snap = proc.getRenderSnapshot();
 
     juce::Array<juce::var> balls;
-    balls.ensureStorageAllocated ((int) snap.balls.size() * 2);
-    for (const auto& b : snap.balls) { balls.add (b.x); balls.add (b.y); }
+    balls.ensureStorageAllocated ((int) snap.balls.size() * 4);
+    for (const auto& b : snap.balls) { balls.add (b.x); balls.add (b.y); balls.add (b.vx); balls.add (b.vy); }
 
     auto* o = new juce::DynamicObject();
     o->setProperty ("playing", snap.playing);

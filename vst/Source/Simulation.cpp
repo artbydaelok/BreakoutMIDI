@@ -515,7 +515,7 @@ void Simulation::writeSnapshot (RenderState& dest) const
 {
     dest.playing = playing;
     dest.balls.clear();
-    for (const auto& b : balls) dest.balls.push_back ({ b.x, b.y });
+    for (const auto& b : balls) dest.balls.push_back ({ b.x, b.y, b.vx, b.vy });
     dest.bricks.clear();
     for (const auto& b : bricks)
         dest.bricks.push_back ({ b.slot.id, b.cx, b.cy, b.alive, b.hitsLeft, b.flash });

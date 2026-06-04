@@ -94,7 +94,7 @@ public:
     struct NoteEvent { int note = 0; int velocity = 0; int channel = 1; int durationMs = 200; };
 
     // Compact per-frame render state for the WebView.
-    struct RenderBall  { float x = 0, y = 0; };
+    struct RenderBall  { float x = 0, y = 0, vx = 0, vy = 0; };
     struct RenderBrick { int slotId = 0; float cx = 0, cy = 0; bool alive = true; int hitsLeft = 1; int flash = 0; };
     struct RenderState
     {
