@@ -3,6 +3,7 @@
 #include <vector>
 #include <random>
 #include <cstdint>
+#include <atomic>
 
 // ============================================================================
 // BreakoutMIDI physics simulation — a faithful, JUCE-free port of the engine
@@ -32,9 +33,11 @@ public:
         float shapeW    = 72.0f, shapeH = 22.0f; // rect
         float shapeR    = 20.0f;                 // circle
         int   shapeSides = 6;       float shapeSize = 28.0f; // polygon
+        int   behavior  = 0;        int   target = 0;        // 0 normal, 1 reload level, 2 load target
     };
 
-    struct Edge { int note = 48; bool enabled = false; int velLock = 0; bool fail = false; };
+    // Edge behaviour: 0 bounce, 1 reload current level, 2 load target level.
+    struct Edge { int note = 48; bool enabled = false; int velLock = 0; int behavior = 0; int target = 0; };
 
     // A brick placed by the level editor. spec.durability < 0 => permanent.
     struct LevelBrick { Slot spec; float x = 0, y = 0; };
@@ -72,8 +75,10 @@ public:
         float             height = 600.0f;
 
         int                     brickSource = Random;
-        std::vector<LevelBrick> level;          // placed bricks (level mode)
+        std::vector<LevelBrick> level;          // active level's placed bricks
         int                     levelVersion = 0; // bumped by the editor on change
+        std::vector<std::vector<LevelBrick>> levels; // all levels (for load-level)
+        int                     activeLevel = 0;
     };
 
     struct NoteEvent { int note = 0; int velocity = 0; int channel = 1; int durationMs = 200; };
@@ -96,6 +101,10 @@ public:
 
     void setPlaying (bool shouldPlay);
     bool isPlaying() const { return playing; }
+
+    // When the sim auto-loads a level (edge/brick behaviour), returns the new
+    // index once (then -1) so the editor can sync the UI's active level.
+    int  takeActiveLevelChanged() { return activeLevelChanged.exchange (-1); }
 
     // Cursor position (sim/canvas pixels). Pushed every frame by the processor.
     void setMouse (float x, float y, bool active) { mouseX = x; mouseY = y; mouseActive = active; }
@@ -125,6 +134,8 @@ private:
         int   hitsLeft = 1;
         int   flash = 0;
         bool  permanent = false; // level bricks that never break
+        int   behavior = 0;      // 0 normal, 1 reload level, 2 load target
+        int   target = 0;
     };
 
     Config config;
@@ -137,7 +148,12 @@ private:
     float mouseX = 0.0f, mouseY = 0.0f;
     bool  mouseActive = false;
     int   appliedLevelVersion = -1;
+    int   appliedActiveLevel = -1;
+    bool  m_needReset = false;
+    int   m_pendingLoad = -1;
+    std::atomic<int> activeLevelChanged { -1 };
     void  buildLevel();
+    void  loadLevel (int idx);
 
     void applyMouseForce (Ball& b);                                   // force field (per step)
     void applyCage       (Ball& b);                                   // cage wall (per substep)

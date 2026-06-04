@@ -68,6 +68,8 @@ Simulation::Brick Simulation::makeBrick (const Slot& s, float cx, float cy)
     b.hitsLeft = std::max (1, s.durability);
     b.alive    = true;
     b.flash    = 0;
+    b.behavior = s.behavior;
+    b.target   = s.target;
 
     if (s.shape == Circle)
     {
@@ -171,6 +173,9 @@ void Simulation::resolveHit (Ball& ball, Brick& brick, float nx, float ny, float
     brick.flash = 12;
 
     emitNote (brick.slot.note, brick.slot.velLock, spd, out);
+
+    if      (brick.behavior == 1) m_needReset = true;
+    else if (brick.behavior == 2) m_pendingLoad = brick.target;
 }
 
 bool Simulation::ballBrickCollision (Ball& ball, Brick& brick, std::vector<NoteEvent>& out)
@@ -346,6 +351,19 @@ void Simulation::buildLevel()
         bricks.push_back (b);
     }
     appliedLevelVersion = config.levelVersion;
+    appliedActiveLevel  = config.activeLevel;
+}
+
+void Simulation::loadLevel (int idx)
+{
+    if (idx >= 0 && idx < (int) config.levels.size())
+    {
+        config.level       = config.levels[(size_t) idx];
+        config.activeLevel = idx;
+        appliedActiveLevel = idx;
+    }
+    reset(); // respawns balls + rebuilds bricks from config.level
+    activeLevelChanged.store (config.activeLevel);
 }
 
 void Simulation::applyConfig (const Config& cfg)
@@ -364,7 +382,7 @@ void Simulation::applyConfig (const Config& cfg)
     // clear placed bricks when returning to the random spawner
     if (config.brickSource == Level)
     {
-        if (prevSource != Level || config.levelVersion != appliedLevelVersion)
+        if (prevSource != Level || config.levelVersion != appliedLevelVersion || config.activeLevel != appliedActiveLevel)
             buildLevel();
     }
     else if (prevSource == Level)
@@ -417,13 +435,15 @@ void Simulation::step (double dt, std::vector<NoteEvent>& out)
     const float grav = hail ? config.params.gravity : 0.0f;
     const float W = config.width, H = config.height;
 
-    bool needReset = false;
-    // Edge contact: emit the edge note, and if the edge is a "fail" edge, flag a
-    // level reload. Returns true if the edge failed (caller should not bounce).
+    m_needReset = false; m_pendingLoad = -1;
+    // Edge contact: emit the edge note; behaviour 1 reloads, 2 loads target.
+    // Returns true if the ball should NOT bounce (the edge "consumed" it).
     auto contact = [&] (int e, float stepSpd) -> bool
     {
         if (config.edges[e].enabled) emitNote (config.edges[e].note, config.edges[e].velLock, stepSpd, out);
-        if (config.edges[e].fail) { needReset = true; return true; }
+        const int beh = config.edges[e].behavior;
+        if (beh == 1) { m_needReset = true;  return true; }
+        if (beh == 2) { m_pendingLoad = config.edges[e].target; return true; }
         return false;
     };
 
@@ -477,7 +497,8 @@ void Simulation::step (double dt, std::vector<NoteEvent>& out)
         [] (Brick& b) { b.flash = std::max (0, b.flash - 1); return ! (b.alive || b.flash > 0); }),
         bricks.end());
 
-    if (needReset) reset(); // a ball passed a "fail" edge -> reload the level
+    if      (m_pendingLoad >= 0) loadLevel (m_pendingLoad); // a load-behaviour was hit
+    else if (m_needReset)        reset();                   // a reload-behaviour was hit
 }
 
 void Simulation::writeSnapshot (RenderState& dest) const

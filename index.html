@@ -117,7 +117,7 @@
       <button class="mode-btn active" data-mode="billiards">Billiards</button>
       <button class="mode-btn" data-mode="hail">Pachinko ↓</button>
     </div>
-    <div class="knob-row">
+    <div class="knob-row" id="ball-speed-row">
       <label>Ball Speed</label>
       <input type="range" id="ball-speed" min="1" max="40" value="6" step="0.5">
       <span class="val" id="ball-speed-val">6</span>
@@ -301,12 +301,17 @@
     <input type="range" id="ed-vel-lock" min="0" max="127" value="0" step="1">
     <span class="val" id="ed-vel-lock-val">Auto</span>
   </div>
-  <div class="editor-row" id="ed-fail-row" style="display:none">
-    <label>On Pass</label>
-    <div style="flex:2;display:flex;align-items:center;gap:8px">
-      <input type="checkbox" id="ed-fail" style="width:14px;height:14px;accent-color:#f55;cursor:pointer">
-      <span style="color:#666;font-size:10px" id="ed-fail-label">Bounce</span>
-    </div>
+  <div class="editor-row" id="ed-behavior-row" style="display:none">
+    <label id="ed-behavior-label">Behavior</label>
+    <select id="ed-behavior" style="flex:2">
+      <option value="0">Bounce</option>
+      <option value="1">Reload level</option>
+      <option value="2">Load level…</option>
+    </select>
+  </div>
+  <div class="editor-row" id="ed-target-row" style="display:none">
+    <label>Target level</label>
+    <select id="ed-target" style="flex:2"></select>
   </div>
   <div class="editor-row" id="ed-permanent-row" style="display:none">
     <label>Permanent</label>
@@ -679,9 +684,10 @@ function render() {
     {s:edgeSlots.left,fn:()=>ctx.fillRect(0,0,3,canvas.height)},
   ]
   for(const {s,fn} of edgeDefs){
-    if(!s.enabled&&!s.fail)continue
-    const col=s.fail?'#ff4a4a':s.color
-    ctx.globalAlpha=s.fail?.6:.35;ctx.fillStyle=col;ctx.shadowColor=col;ctx.shadowBlur=s.fail?14:10;fn();ctx.shadowBlur=0;ctx.globalAlpha=1
+    const beh=s.behavior||0
+    if(!s.enabled&&beh===0)continue
+    const col=beh>0?'#ff4a4a':s.color
+    ctx.globalAlpha=beh>0?.6:.35;ctx.fillStyle=col;ctx.shadowColor=col;ctx.shadowBlur=beh>0?14:10;fn();ctx.shadowBlur=0;ctx.globalAlpha=1
   }
   for(const b of bricks){
     ctx.globalAlpha=b.alive?1:b.flash/12
@@ -923,11 +929,10 @@ function buildConfig(){
       velLock:s.velLock||0, durability:s.durability||1, shape:shapeToInt(s.shape||'rect'),
       shapeW:s.shapeW||72, shapeH:s.shapeH||22, shapeR:s.shapeR||20, shapeSides:s.shapeSides||6, shapeSize:s.shapeSize||28,
       color:s.color, held:!!s.held })),
-    edges:[edgeSlots.top,edgeSlots.right,edgeSlots.bottom,edgeSlots.left].map(e=>({note:e.note,enabled:e.enabled,velLock:e.velLock||0,color:e.color,fail:!!e.fail})),
+    edges:[edgeSlots.top,edgeSlots.right,edgeSlots.bottom,edgeSlots.left].map(e=>({note:e.note,enabled:e.enabled,velLock:e.velLock||0,color:e.color,behavior:e.behavior||0,target:e.target||0})),
     brickSource: brickSource==='level'?1:0,
     activeLevel, levelVersion,
     levels: levels.map(L=>({name:L.name, bricks:L.bricks})),
-    level: brickSource==='level' ? activeBricks().map(toCppBrick) : [],
     width: canvas.width, height: canvas.height, playing: !!playing
   }
 }
@@ -946,6 +951,7 @@ function refreshControls(){
   const svl=document.getElementById('speed-vel-label'); if(svl)svl.textContent=params.speedToVel?'On':'Off'
   document.querySelectorAll('.mode-btn[data-mode]').forEach(b=>b.classList.toggle('active', b.dataset.mode===params.physicsMode))
   const gr=document.getElementById('gravity-row'); if(gr)gr.style.display=params.physicsMode==='billiards'?'none':'flex'
+  const bsr=document.getElementById('ball-speed-row'); if(bsr)bsr.style.display=params.physicsMode==='hail'?'none':'flex'
   const pb=document.getElementById('play-btn'); if(pb)pb.textContent=playing?'⏸ Pause':'▶ Play'
   setR('force-strength',params.forceStrength,'force-strength-val')
   setR('cage-radius',params.cageRadius,'cage-radius-val')
@@ -985,7 +991,7 @@ function restoreUiState(st){
   }
   if(Array.isArray(st.edges)){
     const names=['top','right','bottom','left']
-    st.edges.forEach((e,i)=>{ if(names[i]) edgeSlots[names[i]]={note:e.note,enabled:!!e.enabled,velLock:e.velLock||0,color:e.color||edgeSlots[names[i]].color,fail:!!e.fail} })
+    st.edges.forEach((e,i)=>{ if(names[i]) edgeSlots[names[i]]={note:e.note,enabled:!!e.enabled,velLock:e.velLock||0,color:e.color||edgeSlots[names[i]].color,behavior:(e.behavior!=null?e.behavior:(e.fail?1:0)),target:e.target||0} })
   }
   if(st.brickSource!=null) brickSource = st.brickSource===1?'level':'random'
   if(Array.isArray(st.levels)){
@@ -1050,6 +1056,12 @@ if(juceBackend){
   // Host restored state externally (undo / preset / project load): refresh the UI
   juceBackend.addEventListener('restoreState', st => {
     if(st && Array.isArray(st.slots)){ restoreUiState(st); if(editingLevel) refreshEditBricks(); cachedKey=''; syncConfig(true) }
+  })
+  // The engine auto-loaded a level (edge/brick behaviour): follow it in the UI
+  juceBackend.addEventListener('activeLevelChanged', d => {
+    if(!d) return
+    const idx=d.index|0
+    if(idx>=0 && idx<levels.length){ activeLevel=idx; cachedKey=''; if(editingLevel)refreshEditBricks(); updateLevelUI() }
   })
   // Restore persisted state from C++ (window reopen / project reload), then
   // start pushing UI changes. Fallback in case getState doesn't resolve.
@@ -1177,9 +1189,10 @@ function renderNoteSlots(){
 function renderEdgeSlots(){
   for(const[edge,slot]of Object.entries(edgeSlots)){
     const el=document.querySelector(`.edge-slot[data-edge="${edge}"]`);if(!el)continue
-    el.style.setProperty('--slot-color',slot.fail?'#ff5555':slot.color)
-    el.className='edge-slot'+((slot.enabled||slot.fail)?' active':'')
-    el.querySelector('.edge-note').textContent=slot.fail?'⟲ OUT':(slot.enabled?midiToName(slot.note):'—')
+    const beh=slot.behavior||0
+    el.style.setProperty('--slot-color',beh>0?'#ff5555':slot.color)
+    el.className='edge-slot'+((slot.enabled||beh>0)?' active':'')
+    el.querySelector('.edge-note').textContent=beh===1?'⟲ RELOAD':beh===2?'⇲ LOAD':(slot.enabled?midiToName(slot.note):'—')
   }
 }
 
@@ -1206,8 +1219,15 @@ function openEditor(slot,type){
   document.getElementById('ed-permanent').checked=perm
   document.getElementById('ed-permanent-label').textContent=perm?'∞ (never breaks)':'breakable'
   document.getElementById('ed-shape-section').style.display=isEdge?'none':'block'
-  document.getElementById('ed-fail-row').style.display=isEdge?'flex':'none'
-  if(isEdge){ document.getElementById('ed-fail').checked=!!slot.fail; document.getElementById('ed-fail-label').textContent=slot.fail?'Reload level':'Bounce' }
+  const showBeh=isEdge||isLevel
+  document.getElementById('ed-behavior-row').style.display=showBeh?'flex':'none'
+  if(showBeh){
+    document.getElementById('ed-behavior-label').textContent=isEdge?'On Pass':'On Hit'
+    document.querySelector('#ed-behavior option[value="0"]').textContent=isEdge?'Bounce':'Normal hit'
+    document.getElementById('ed-behavior').value=String(slot.behavior||0)
+    populateTargetSelect(slot.target||0)
+    document.getElementById('ed-target-row').style.display=((slot.behavior||0)===2)?'flex':'none'
+  } else { document.getElementById('ed-target-row').style.display='none' }
   if(!isEdge){
     const sh=slot.shape||'rect'
     setEditorShape(sh)
@@ -1248,8 +1268,9 @@ document.getElementById('ed-save').addEventListener('click',()=>{
   editingSlot.note=parseInt(document.getElementById('ed-note').value)
   editingSlot.color=document.getElementById('ed-color').value
   editingSlot.velLock=parseInt(document.getElementById('ed-vel-lock').value)
-  if(editingType==='top'||editingType==='right'||editingType==='bottom'||editingType==='left'){
-    editingSlot.fail = document.getElementById('ed-fail').checked
+  if(editingType==='top'||editingType==='right'||editingType==='bottom'||editingType==='left'||editingType==='level'){
+    editingSlot.behavior = parseInt(document.getElementById('ed-behavior').value)||0
+    editingSlot.target = parseInt(document.getElementById('ed-target').value)||0
   }
   if(editingType==='brick') {
     editingSlot.prob=parseInt(document.getElementById('ed-prob').value)
@@ -1272,7 +1293,8 @@ document.getElementById('ed-save').addEventListener('click',()=>{
     editingSlot.shapeSides=parseInt(document.getElementById('ed-shape-sides').value)
     editingSlot.shapeSize=parseInt(document.getElementById('ed-shape-size').value)
     levelBrush={note:editingSlot.note,color:editingSlot.color,velLock:editingSlot.velLock,durability:editingSlot.durability,
-      shape:editingSlot.shape,shapeW:editingSlot.shapeW,shapeH:editingSlot.shapeH,shapeR:editingSlot.shapeR,shapeSides:editingSlot.shapeSides,shapeSize:editingSlot.shapeSize}
+      shape:editingSlot.shape,shapeW:editingSlot.shapeW,shapeH:editingSlot.shapeH,shapeR:editingSlot.shapeR,shapeSides:editingSlot.shapeSides,shapeSize:editingSlot.shapeSize,
+      behavior:editingSlot.behavior||0,target:editingSlot.target||0}
     bumpLevel(); refreshEditBricks(); updateLevelUI()
   }
   document.getElementById('note-editor').classList.remove('open');renderNoteSlots();renderEdgeSlots()
@@ -1286,9 +1308,14 @@ document.getElementById('ed-permanent').addEventListener('change',e=>{
   document.getElementById('ed-permanent-label').textContent=e.target.checked?'∞ (never breaks)':'breakable'
   document.getElementById('ed-durability-row').style.display=e.target.checked?'none':'flex'
 })
-document.getElementById('ed-fail').addEventListener('change',e=>{
-  document.getElementById('ed-fail-label').textContent=e.target.checked?'Reload level':'Bounce'
+document.getElementById('ed-behavior').addEventListener('change',e=>{
+  document.getElementById('ed-target-row').style.display=(e.target.value==='2')?'flex':'none'
 })
+function populateTargetSelect(val){
+  const t=document.getElementById('ed-target'); if(!t)return
+  t.innerHTML=''
+  levels.forEach((L,i)=>{ const o=document.createElement('option'); o.value=i; o.textContent=(i+1)+'. '+L.name; if(i===val)o.selected=true; t.appendChild(o) })
+}
 document.getElementById('add-note-btn').addEventListener('click',()=>{
   const s={id:nextSlotId++,note:60+Math.floor(Math.random()*24),prob:50,color:'#'+Math.floor(Math.random()*0xffffff).toString(16).padStart(6,'0'),enabled:true,velLock:0,durability:1,...defaultShape()}
   noteSlots.push(s);renderNoteSlots();openEditor(s,'brick')
@@ -1374,7 +1401,8 @@ canvas.addEventListener('mousedown',e=>{
   if(hit){ selectedBrick=hit; levelDrag={brick:hit, dx:px-hit.x, dy:py-hit.y, moved:false} }
   else {
     const b={id:nextLevelBrickId++, x:px, y:py, note:levelBrush.note, color:levelBrush.color, velLock:levelBrush.velLock||0, durability:levelBrush.durability,
-      shape:levelBrush.shape||'rect', shapeW:levelBrush.shapeW||72, shapeH:levelBrush.shapeH||22, shapeR:levelBrush.shapeR||20, shapeSides:levelBrush.shapeSides||6, shapeSize:levelBrush.shapeSize||28}
+      shape:levelBrush.shape||'rect', shapeW:levelBrush.shapeW||72, shapeH:levelBrush.shapeH||22, shapeR:levelBrush.shapeR||20, shapeSides:levelBrush.shapeSides||6, shapeSize:levelBrush.shapeSize||28,
+      behavior:levelBrush.behavior||0, target:levelBrush.target||0}
     activeBricks().push(b); selectedBrick=b; bumpLevel(); refreshEditBricks(); updateLevelUI()
   }
 })
@@ -1423,6 +1451,7 @@ document.querySelectorAll('.mode-btn').forEach(btn=>{
     document.querySelectorAll('.mode-btn').forEach(b=>b.classList.remove('active'))
     btn.classList.add('active');params.physicsMode=btn.dataset.mode
     gravityRow.style.display=params.physicsMode==='billiards'?'none':'flex'
+    const bsr=document.getElementById('ball-speed-row'); if(bsr)bsr.style.display=params.physicsMode==='hail'?'none':'flex'
     if(playing&&!pluginMode)resetSim()
   })
 })

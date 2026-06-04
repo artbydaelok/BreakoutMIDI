@@ -71,6 +71,13 @@ void BreakoutMidiEditor::timerCallback()
         webView.emitEventIfBrowserIsVisible ("restoreState", proc.getRestoreVar());
     }
 
+    // The sim auto-loaded a level (edge/brick behaviour): sync the UI's active level
+    if (const int lv = proc.takeActiveLevelChanged(); lv >= 0)
+    {
+        auto* o = new juce::DynamicObject(); o->setProperty ("index", lv);
+        webView.emitEventIfBrowserIsVisible ("activeLevelChanged", juce::var (o));
+    }
+
     // Host MIDI in -> UI held notes (every tick)
     BreakoutMidiProcessor::MidiInEvent e;
     while (proc.popMidiIn (e))

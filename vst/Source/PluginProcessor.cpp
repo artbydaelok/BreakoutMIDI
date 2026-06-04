@@ -7,6 +7,31 @@ namespace
     int   asInt   (const juce::var& v, int d)   { return v.isVoid() ? d : (int) v; }
     float asFloat (const juce::var& v, float d) { return v.isVoid() ? d : (float) (double) v; }
     bool  asBool  (const juce::var& v, bool d)  { return v.isVoid() ? d : (bool) v; }
+    int   shapeAsInt (const juce::var& v)
+    {
+        if (v.isString()) { const auto s = v.toString(); return s == "circle" ? 1 : s == "polygon" ? 2 : 0; }
+        return (int) v;
+    }
+
+    Simulation::LevelBrick parseLevelBrick (const juce::var& lv)
+    {
+        Simulation::LevelBrick lb;
+        lb.x = asFloat (lv.getProperty ("x", {}), 0.0f);
+        lb.y = asFloat (lv.getProperty ("y", {}), 0.0f);
+        lb.spec.id         = asInt   (lv.getProperty ("id",         {}), 0);
+        lb.spec.note       = asInt   (lv.getProperty ("note",       {}), 60);
+        lb.spec.velLock    = asInt   (lv.getProperty ("velLock",    {}), 0);
+        lb.spec.durability = asInt   (lv.getProperty ("durability", {}), -1);
+        lb.spec.shape      = shapeAsInt (lv.getProperty ("shape",   {}));
+        lb.spec.shapeW     = asFloat (lv.getProperty ("shapeW",     {}), 72.0f);
+        lb.spec.shapeH     = asFloat (lv.getProperty ("shapeH",     {}), 22.0f);
+        lb.spec.shapeR     = asFloat (lv.getProperty ("shapeR",     {}), 20.0f);
+        lb.spec.shapeSides = asInt   (lv.getProperty ("shapeSides", {}), 6);
+        lb.spec.shapeSize  = asFloat (lv.getProperty ("shapeSize",  {}), 28.0f);
+        lb.spec.behavior   = asInt   (lv.getProperty ("behavior",   {}), 0);
+        lb.spec.target     = asInt   (lv.getProperty ("target",     {}), 0);
+        return lb;
+    }
 
     Simulation::Config parseConfig (const juce::var& v)
     {
@@ -56,36 +81,30 @@ namespace
             for (int i = 0; i < 4 && i < earr->size(); ++i)
             {
                 const auto ev = (*earr)[i];
-                c.edges[i].note    = asInt  (ev.getProperty ("note",    {}), 48);
-                c.edges[i].enabled = asBool (ev.getProperty ("enabled", {}), false);
-                c.edges[i].velLock = asInt  (ev.getProperty ("velLock", {}), 0);
-                c.edges[i].fail    = asBool (ev.getProperty ("fail",    {}), false);
+                c.edges[i].note     = asInt  (ev.getProperty ("note",    {}), 48);
+                c.edges[i].enabled  = asBool (ev.getProperty ("enabled", {}), false);
+                c.edges[i].velLock  = asInt  (ev.getProperty ("velLock", {}), 0);
+                c.edges[i].behavior = asInt  (ev.getProperty ("behavior", {}), asBool (ev.getProperty ("fail", {}), false) ? 1 : 0);
+                c.edges[i].target   = asInt  (ev.getProperty ("target",  {}), 0);
             }
         }
 
         c.brickSource  = asInt (v.getProperty ("brickSource",  {}), 0);
         c.levelVersion = asInt (v.getProperty ("levelVersion", {}), 0);
-        if (auto* larr = v.getProperty ("level", juce::var()).getArray())
+        c.activeLevel  = asInt (v.getProperty ("activeLevel",  {}), 0);
+        if (auto* larr = v.getProperty ("levels", juce::var()).getArray())
         {
-            c.level.clear();
-            for (const auto& lv : *larr)
+            c.levels.clear();
+            for (const auto& L : *larr)
             {
-                Simulation::LevelBrick lb;
-                lb.x = asFloat (lv.getProperty ("x", {}), 0.0f);
-                lb.y = asFloat (lv.getProperty ("y", {}), 0.0f);
-                lb.spec.id         = asInt   (lv.getProperty ("id",         {}), 0);
-                lb.spec.note       = asInt   (lv.getProperty ("note",       {}), 60);
-                lb.spec.velLock    = asInt   (lv.getProperty ("velLock",    {}), 0);
-                lb.spec.durability = asInt   (lv.getProperty ("durability", {}), -1);
-                lb.spec.shape      = asInt   (lv.getProperty ("shape",      {}), 0);
-                lb.spec.shapeW     = asFloat (lv.getProperty ("shapeW",     {}), 72.0f);
-                lb.spec.shapeH     = asFloat (lv.getProperty ("shapeH",     {}), 22.0f);
-                lb.spec.shapeR     = asFloat (lv.getProperty ("shapeR",     {}), 20.0f);
-                lb.spec.shapeSides = asInt   (lv.getProperty ("shapeSides", {}), 6);
-                lb.spec.shapeSize  = asFloat (lv.getProperty ("shapeSize",  {}), 28.0f);
-                c.level.push_back (lb);
+                std::vector<Simulation::LevelBrick> bricks;
+                if (auto* barr = L.getProperty ("bricks", juce::var()).getArray())
+                    for (const auto& lv : *barr) bricks.push_back (parseLevelBrick (lv));
+                c.levels.push_back (std::move (bricks));
             }
         }
+        if (c.activeLevel >= 0 && c.activeLevel < (int) c.levels.size())
+            c.level = c.levels[(size_t) c.activeLevel];
 
         c.width  = asFloat (v.getProperty ("width",  {}), 1000.0f);
         c.height = asFloat (v.getProperty ("height", {}), 600.0f);
