@@ -163,9 +163,12 @@ void Simulation::resolveHit (Ball& ball, Brick& brick, float nx, float ny, float
         ball.vy = ball.vy / spd * config.params.ballSpeed;
     }
 
-    brick.hitsLeft -= 1;
+    if (! brick.permanent)
+    {
+        brick.hitsLeft -= 1;
+        if (brick.hitsLeft <= 0) brick.alive = false;
+    }
     brick.flash = 12;
-    if (brick.hitsLeft <= 0) brick.alive = false;
 
     emitNote (brick.slot.note, brick.slot.velLock, spd, out);
 }
@@ -332,16 +335,44 @@ void Simulation::applyPaddles (Ball& b, std::vector<NoteEvent>& out)
                           std::sqrt (b.vx * b.vx + b.vy * b.vy), out);
 }
 
+void Simulation::buildLevel()
+{
+    bricks.clear();
+    for (const auto& lb : config.level)
+    {
+        Brick b = makeBrick (lb.spec, lb.x, lb.y);
+        b.permanent = lb.spec.durability < 0;
+        if (b.permanent) b.hitsLeft = 1 << 30;
+        bricks.push_back (b);
+    }
+    appliedLevelVersion = config.levelVersion;
+}
+
 void Simulation::applyConfig (const Config& cfg)
 {
-    const int   prevMode  = config.params.mode;
-    const float prevSpeed = config.params.ballSpeed;
+    const int   prevMode   = config.params.mode;
+    const int   prevSource = config.brickSource;
+    const float prevSpeed  = config.params.ballSpeed;
     config = cfg;
 
-    // a mode change re-seeds balls so they fit the new layout
+    // a mode change re-seeds balls (and rebuilds the level if active)
     if (cfg.params.mode != prevMode) { reset(); return; }
 
     syncBallCount();
+
+    // brick source: build the level when entering level mode or when it changes;
+    // clear placed bricks when returning to the random spawner
+    if (config.brickSource == Level)
+    {
+        if (prevSource != Level || config.levelVersion != appliedLevelVersion)
+            buildLevel();
+    }
+    else if (prevSource == Level)
+    {
+        bricks.clear();
+        spawnTimer = 0.0;
+        appliedLevelVersion = -1;
+    }
 
     // ball speed is per-ball state, so apply a change to every live ball now
     // (otherwise a ball only picks up the new speed on its next collision)
@@ -369,14 +400,18 @@ void Simulation::reset()
     spawnTimer = 0.0;
     for (int i = 0; i < std::max (0, config.params.numBalls); ++i)
         balls.push_back (makeBall());
+    if (config.brickSource == Level) buildLevel();
 }
 
 void Simulation::step (double dt, std::vector<NoteEvent>& out)
 {
     if (! playing) return;
 
-    spawnTimer -= dt;
-    if (spawnTimer <= 0.0) { spawnBrick(); spawnTimer = config.params.spawnRate; }
+    if (config.brickSource == Random)
+    {
+        spawnTimer -= dt;
+        if (spawnTimer <= 0.0) { spawnBrick(); spawnTimer = config.params.spawnRate; }
+    }
 
     const bool hail = config.params.mode == Hail;
     const float grav = hail ? config.params.gravity : 0.0f;

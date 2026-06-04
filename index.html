@@ -22,6 +22,10 @@
   .mode-btn.active { background: #2a3a52; border-color: #4a6fa5; color: #a0c0ff; }
   .mmode-btn { flex: 1; background: #1c1c1c; border: 1px solid #2e2e2e; color: #888; border-radius: 4px; padding: 5px 2px; cursor: pointer; font-family: inherit; font-size: 10px; text-align: center; transition: all .1s; }
   .mmode-btn.active { background: #3a2a52; border-color: #7a5aa5; color: #c8a8ff; }
+  .src-btn { flex: 1; background: #1c1c1c; border: 1px solid #2e2e2e; color: #888; border-radius: 4px; padding: 5px 4px; cursor: pointer; font-family: inherit; font-size: 10px; text-align: center; transition: all .1s; }
+  .src-btn.active { background: #2a3a52; border-color: #4a6fa5; color: #a0c0ff; }
+  #canvas-wrap.editing #sim { cursor: crosshair; }
+  #level-edit-btn.on { background: #3a2a52; border-color: #7a5aa5; color: #c8a8ff; }
   #note-slots { display: flex; flex-direction: column; gap: 6px; }
   .note-slot { background: #1c1c1c; border: 1px solid #2e2e2e; border-radius: 6px; padding: 8px 10px; display: grid; grid-template-columns: 14px 1fr auto auto; align-items: center; gap: 6px; cursor: pointer; transition: border-color .15s; }
   .note-slot:hover { border-color: #444; }
@@ -157,6 +161,25 @@
     </div>
   </div>
 
+  <!-- BRICKS / LEVELS -->
+  <div>
+    <div class="section-label">Bricks</div>
+    <div class="mode-row">
+      <button class="src-btn active" data-src="random">Random</button>
+      <button class="src-btn" data-src="level">Level</button>
+    </div>
+    <div id="level-controls" style="display:none">
+      <div class="knob-row" style="margin-top:2px"><select id="level-select" style="width:100%"></select></div>
+      <div class="knob-row" style="margin-top:2px"><input type="text" id="level-name" placeholder="Level name" style="width:100%;background:#222;color:#ddd;border:1px solid #333;border-radius:4px;padding:5px 8px;font-family:inherit;font-size:11px"></div>
+      <div class="mode-row" style="margin-top:2px">
+        <button class="btn" id="level-new">+ New</button>
+        <button class="btn danger" id="level-delete">Delete</button>
+      </div>
+      <button class="btn" id="level-edit-btn" style="width:100%;margin-top:4px">✎ Edit Level</button>
+      <div style="color:#666;font-size:9px;margin-top:5px;line-height:1.4" id="level-hint"></div>
+    </div>
+  </div>
+
   <!-- EDGE NOTES -->
   <div>
     <div class="section-label">Edge Notes</div>
@@ -276,6 +299,13 @@
     <input type="range" id="ed-vel-lock" min="0" max="127" value="0" step="1">
     <span class="val" id="ed-vel-lock-val">Auto</span>
   </div>
+  <div class="editor-row" id="ed-permanent-row" style="display:none">
+    <label>Permanent</label>
+    <div style="flex:2;display:flex;align-items:center;gap:8px">
+      <input type="checkbox" id="ed-permanent" checked style="width:14px;height:14px;accent-color:#7a5aa5;cursor:pointer">
+      <span style="color:#666;font-size:10px" id="ed-permanent-label">∞ (never breaks)</span>
+    </div>
+  </div>
   <div class="editor-row" id="ed-durability-row">
     <label>Durability</label>
     <input type="range" id="ed-durability" min="1" max="8" value="1" step="1">
@@ -328,6 +358,21 @@ let playing=false, balls=[], bricks=[], spawnTimer=0
 let params = {ballSpeed:6,gravity:0.3,numBalls:1,spawnRate:1/0.7,maxBricks:24,noteLen:200,midiChannel:1,physicsMode:'billiards',speedToVel:true,
   mouseMode:0,forceStrength:30,forceAttract:false,cageRadius:120,paddleSize:90}
 let pluginMouse = {x:0,y:0,active:false}
+
+// ── Levels ──
+let brickSource='random'                 // 'random' | 'level'
+let levels=[{name:'Level 1', bricks:[]}] // named presets
+let activeLevel=0
+let levelVersion=0
+let editingLevel=false
+let nextLevelBrickId=500001
+let levelBrush={note:60,color:'#4a9af5',velLock:0,durability:-1,...defaultShape()}
+let levelDrag=null
+let cachedBricks=[], cachedKey=''   // play-mode brick render cache (shared with edit refresh)
+function activeBricks(){ return (levels[activeLevel]||levels[0]).bricks }
+function bumpLevel(){ levelVersion++ }
+function toCppBrick(b){ return {id:b.id,x:b.x,y:b.y,note:b.note,velLock:b.velLock||0,durability:b.durability,
+  shape:shapeToInt(b.shape||'rect'),shapeW:b.shapeW||72,shapeH:b.shapeH||22,shapeR:b.shapeR||20,shapeSides:b.shapeSides||6,shapeSize:b.shapeSize||28} }
 
 const canvas = document.getElementById('sim')
 const ctx = canvas.getContext('2d')
@@ -726,6 +771,14 @@ function render() {
     }
     ctx.restore()
   }
+
+  // level editor: outline the selected brick
+  if(editingLevel && selectedBrick){
+    const b=selectedBrick
+    const s=(b.shape==='circle'?(b.shapeR||20):b.shape==='polygon'?(b.shapeSize||28):Math.max(b.shapeW||72,b.shapeH||22)/2)+5
+    ctx.save(); ctx.strokeStyle='#fff'; ctx.lineWidth=1.5; ctx.setLineDash([4,3]); ctx.globalAlpha=.9
+    ctx.strokeRect(b.x-s, b.y-s, s*2, s*2); ctx.restore()
+  }
 }
 
 // Web Worker ticker — Chrome doesn't throttle workers in background tabs
@@ -861,6 +914,10 @@ function buildConfig(){
       shapeW:s.shapeW||72, shapeH:s.shapeH||22, shapeR:s.shapeR||20, shapeSides:s.shapeSides||6, shapeSize:s.shapeSize||28,
       color:s.color, held:!!s.held })),
     edges:[edgeSlots.top,edgeSlots.right,edgeSlots.bottom,edgeSlots.left].map(e=>({note:e.note,enabled:e.enabled,velLock:e.velLock||0,color:e.color})),
+    brickSource: brickSource==='level'?1:0,
+    activeLevel, levelVersion,
+    levels: levels.map(L=>({name:L.name, bricks:L.bricks})),
+    level: brickSource==='level' ? activeBricks().map(toCppBrick) : [],
     width: canvas.width, height: canvas.height, playing: !!playing
   }
 }
@@ -886,6 +943,7 @@ function refreshControls(){
   const fa=document.getElementById('force-attract'); if(fa)fa.checked=params.forceAttract
   const fal=document.getElementById('force-attract-label'); if(fal)fal.textContent=params.forceAttract?'Attract':'Repel'
   updateMouseModeUI()
+  updateLevelUI()
   renderNoteSlots(); renderEdgeSlots()
 }
 function updateMouseModeUI(){
@@ -919,6 +977,14 @@ function restoreUiState(st){
     const names=['top','right','bottom','left']
     st.edges.forEach((e,i)=>{ if(names[i]) edgeSlots[names[i]]={note:e.note,enabled:!!e.enabled,velLock:e.velLock||0,color:e.color||edgeSlots[names[i]].color} })
   }
+  if(st.brickSource!=null) brickSource = st.brickSource===1?'level':'random'
+  if(Array.isArray(st.levels)){
+    levels = st.levels.map(L=>({name:L.name||'Level', bricks:(L.bricks||[]).map(b=>({...b}))}))
+    if(!levels.length) levels=[{name:'Level 1',bricks:[]}]
+    nextLevelBrickId = Math.max(nextLevelBrickId, 500001, ...levels.flatMap(L=>L.bricks.map(b=>(b.id||0)+1)))
+  }
+  if(st.activeLevel!=null) activeLevel = Math.max(0, Math.min(st.activeLevel, levels.length-1))
+  if(st.levelVersion!=null) levelVersion = st.levelVersion
   if(st.playing!=null) playing=!!st.playing
   refreshControls()
 }
@@ -939,16 +1005,16 @@ if(juceBackend){
 
   // Render from the C++ simulation snapshot. Balls arrive every frame; bricks
   // arrive ~20fps and are cached (only rebuilt when a brick spawns/despawns).
-  let cachedBricks=[], cachedKey=''
   juceBackend.addEventListener('simState', s => {
     if(!s) return
+    if(editingLevel){ playing=!!s.playing; return } // while editing, JS owns the view
     if(s.bricks){
       const sb=s.bricks, n=(sb.length/6)|0
       let key=n+':'
       for(let i=0;i<n;i++){ const o=i*6; key += sb[o]+','+(sb[o+1]|0)+','+(sb[o+2]|0)+';' }
       if(key!==cachedKey){
         cachedBricks=[]
-        for(let i=0;i<n;i++){ const o=i*6; const slot=noteSlots.find(x=>slotNumId(x)===sb[o])||{note:60,color:'#8888ff',...defaultShape()}; cachedBricks.push(makeBrick(slot, sb[o+1], sb[o+2])) }
+        for(let i=0;i<n;i++){ const o=i*6; cachedBricks.push(makeBrick(resolveSpec(sb[o]), sb[o+1], sb[o+2])) }
         cachedKey=key
       }
       for(let i=0;i<n;i++){ const o=i*6, br=cachedBricks[i]; if(!br)continue; br.alive=!!sb[o+3]; br.hitsLeft=sb[o+4]; br.flash=sb[o+5]; if(sb[o+5]>=7 && br.slot.color){ noteFlash.color=br.slot.color; noteFlash.t=1 } }
@@ -1106,19 +1172,25 @@ function renderEdgeSlots(){
 let editingSlot=null,editingType='brick'
 function openEditor(slot,type){
   editingSlot=slot;editingType=type
-  const isEdge=type!=='brick'
-  document.getElementById('ed-title').textContent=isEdge?`Edge: ${type}`:'Edit Note Slot'
-  document.getElementById('ed-prob-row').style.display=isEdge?'none':'flex'
-  document.getElementById('ed-delete').style.display=isEdge?'none':'inline-block'
+  const isEdge=(type==='top'||type==='right'||type==='bottom'||type==='left')
+  const isLevel=type==='level'
+  document.getElementById('ed-title').textContent=isEdge?`Edge: ${type}`:isLevel?'Edit Level Brick':'Edit Note Slot'
+  document.getElementById('ed-prob-row').style.display=(type==='brick')?'flex':'none'
+  document.getElementById('ed-delete').style.display=(type==='brick'||isLevel)?'inline-block':'none'
   document.getElementById('ed-note').value=slot.note
   document.getElementById('ed-note-val').textContent=midiToName(slot.note)
-  if(!isEdge){document.getElementById('ed-prob').value=slot.prob;document.getElementById('ed-prob-val').textContent=slot.prob+'%'}
+  if(type==='brick'){document.getElementById('ed-prob').value=slot.prob;document.getElementById('ed-prob-val').textContent=slot.prob+'%'}
   document.getElementById('ed-color').value=slot.color
   document.getElementById('ed-vel-lock').value=slot.velLock
   document.getElementById('ed-vel-lock-val').textContent=slot.velLock===0?'Auto':slot.velLock
-  document.getElementById('ed-durability').value=slot.durability||1
-  document.getElementById('ed-durability-val').textContent=slot.durability||1
-  document.getElementById('ed-durability-row').style.display=isEdge?'none':'flex'
+  const perm = isLevel && slot.durability<0
+  const durVal = slot.durability>0?slot.durability:1
+  document.getElementById('ed-durability').value=durVal
+  document.getElementById('ed-durability-val').textContent=durVal
+  document.getElementById('ed-durability-row').style.display=(isEdge||perm)?'none':'flex'
+  document.getElementById('ed-permanent-row').style.display=isLevel?'flex':'none'
+  document.getElementById('ed-permanent').checked=perm
+  document.getElementById('ed-permanent-label').textContent=perm?'∞ (never breaks)':'breakable'
   document.getElementById('ed-shape-section').style.display=isEdge?'none':'block'
   if(!isEdge){
     const sh=slot.shape||'rect'
@@ -1171,10 +1243,30 @@ document.getElementById('ed-save').addEventListener('click',()=>{
     editingSlot.shapeSides=parseInt(document.getElementById('ed-shape-sides').value)
     editingSlot.shapeSize=parseInt(document.getElementById('ed-shape-size').value)
   }
+  if(editingType==='level') {
+    editingSlot.durability = document.getElementById('ed-permanent').checked ? -1 : parseInt(document.getElementById('ed-durability').value)
+    const asb=document.querySelector('#ed-shape-btns .mode-btn.active')
+    editingSlot.shape=asb?.dataset.shape||'rect'
+    editingSlot.shapeW=parseInt(document.getElementById('ed-shape-w').value)
+    editingSlot.shapeH=parseInt(document.getElementById('ed-shape-h').value)
+    editingSlot.shapeR=parseInt(document.getElementById('ed-shape-r').value)
+    editingSlot.shapeSides=parseInt(document.getElementById('ed-shape-sides').value)
+    editingSlot.shapeSize=parseInt(document.getElementById('ed-shape-size').value)
+    levelBrush={note:editingSlot.note,color:editingSlot.color,velLock:editingSlot.velLock,durability:editingSlot.durability,
+      shape:editingSlot.shape,shapeW:editingSlot.shapeW,shapeH:editingSlot.shapeH,shapeR:editingSlot.shapeR,shapeSides:editingSlot.shapeSides,shapeSize:editingSlot.shapeSize}
+    bumpLevel(); refreshEditBricks(); updateLevelUI()
+  }
   document.getElementById('note-editor').classList.remove('open');renderNoteSlots();renderEdgeSlots()
 })
 document.getElementById('ed-cancel').addEventListener('click',()=>document.getElementById('note-editor').classList.remove('open'))
-document.getElementById('ed-delete').addEventListener('click',()=>{noteSlots=noteSlots.filter(s=>s!==editingSlot);document.getElementById('note-editor').classList.remove('open');renderNoteSlots()})
+document.getElementById('ed-delete').addEventListener('click',()=>{
+  if(editingType==='level'){ const a=activeBricks(); const i=a.indexOf(editingSlot); if(i>=0)a.splice(i,1); selectedBrick=null; bumpLevel(); refreshEditBricks(); updateLevelUI(); document.getElementById('note-editor').classList.remove('open'); return }
+  noteSlots=noteSlots.filter(s=>s!==editingSlot);document.getElementById('note-editor').classList.remove('open');renderNoteSlots()
+})
+document.getElementById('ed-permanent').addEventListener('change',e=>{
+  document.getElementById('ed-permanent-label').textContent=e.target.checked?'∞ (never breaks)':'breakable'
+  document.getElementById('ed-durability-row').style.display=e.target.checked?'none':'flex'
+})
 document.getElementById('add-note-btn').addEventListener('click',()=>{
   const s={id:nextSlotId++,note:60+Math.floor(Math.random()*24),prob:50,color:'#'+Math.floor(Math.random()*0xffffff).toString(16).padStart(6,'0'),enabled:true,velLock:0,durability:1,...defaultShape()}
   noteSlots.push(s);renderNoteSlots();openEditor(s,'brick')
@@ -1204,6 +1296,73 @@ document.getElementById('force-attract').addEventListener('change',e=>{
 canvas.addEventListener('mousemove',e=>{ pluginMouse.x=e.offsetX; pluginMouse.y=e.offsetY; pluginMouse.active=true })
 canvas.addEventListener('mouseenter',e=>{ pluginMouse.x=e.offsetX; pluginMouse.y=e.offsetY; pluginMouse.active=true })
 canvas.addEventListener('mouseleave',()=>{ pluginMouse.active=false })
+
+// ── Levels: rendering + editor helpers ──
+let selectedBrick=null
+function resolveSpec(id){
+  let s = noteSlots.find(x=>slotNumId(x)===id)
+  if(s) return s
+  s = activeBricks().find(b=>b.id===id)
+  return s || {note:60,color:'#8888ff',...defaultShape()}
+}
+function refreshEditBricks(){
+  bricks = activeBricks().map(b=>{ const br=makeBrick(b,b.x,b.y); br.permanent=b.durability<0; br.hitsLeft=b.durability<0?1:b.durability; return br })
+  balls=[]; cachedKey=''
+}
+function updateLevelUI(){
+  document.querySelectorAll('.src-btn').forEach(b=>b.classList.toggle('active', b.dataset.src===brickSource))
+  const lc=document.getElementById('level-controls'); if(lc) lc.style.display = brickSource==='level'?'block':'none'
+  const sel=document.getElementById('level-select')
+  if(sel){ sel.innerHTML=''; levels.forEach((L,i)=>{ const o=document.createElement('option'); o.value=i; o.textContent=L.name; if(i===activeLevel)o.selected=true; sel.appendChild(o) }) }
+  const nm=document.getElementById('level-name'); if(nm) nm.value=(levels[activeLevel]||{}).name||''
+  const eb=document.getElementById('level-edit-btn'); if(eb){ eb.classList.toggle('on', editingLevel); eb.textContent=editingLevel?'✓ Done Editing':'✎ Edit Level' }
+  const hint=document.getElementById('level-hint'); if(hint) hint.textContent = editingLevel ? 'Click empty space to add a brick · click a brick to edit · drag to move' : (brickSource==='level' ? `${activeBricks().length} brick(s) — press play to test` : '')
+  const cw=document.getElementById('canvas-wrap'); if(cw) cw.classList.toggle('editing', editingLevel)
+}
+function setEditingLevel(on){
+  editingLevel=on
+  if(on){ brickSource='level'; if(playing){ playing=false; juceSetPlaying(false) } refreshEditBricks() }
+  else { selectedBrick=null; cachedKey='' }
+  syncConfig(true); updateLevelUI()
+}
+function hitTestBrick(b,px,py){
+  const dx=px-b.x, dy=py-b.y, sh=b.shape||'rect'
+  if(sh==='circle') return dx*dx+dy*dy <= (b.shapeR||20)*(b.shapeR||20)
+  if(sh==='polygon'){ const s=b.shapeSize||28; return dx*dx+dy*dy <= s*s }
+  const w=(b.shapeW||72)/2, h=(b.shapeH||22)/2; return Math.abs(dx)<=w && Math.abs(dy)<=h
+}
+function brickAt(px,py){ const a=activeBricks(); for(let i=a.length-1;i>=0;i--){ if(hitTestBrick(a[i],px,py)) return a[i] } return null }
+
+// ── Levels: brick-source + preset manager wiring ──
+document.querySelectorAll('.src-btn').forEach(btn=>{
+  btn.addEventListener('click',()=>{ brickSource=btn.dataset.src; if(brickSource!=='level'&&editingLevel)setEditingLevel(false); updateLevelUI() })
+})
+document.getElementById('level-select').addEventListener('change',e=>{ activeLevel=Math.max(0,Math.min(+e.target.value,levels.length-1)); bumpLevel(); if(editingLevel)refreshEditBricks(); updateLevelUI() })
+document.getElementById('level-name').addEventListener('input',e=>{ if(levels[activeLevel]){ levels[activeLevel].name=e.target.value; const sel=document.getElementById('level-select'); if(sel&&sel.options[activeLevel])sel.options[activeLevel].textContent=e.target.value } })
+document.getElementById('level-new').addEventListener('click',()=>{ levels.push({name:'Level '+(levels.length+1), bricks:[]}); activeLevel=levels.length-1; bumpLevel(); if(editingLevel)refreshEditBricks(); updateLevelUI() })
+document.getElementById('level-delete').addEventListener('click',()=>{ if(levels.length<=1){ levels[0].bricks=[] } else { levels.splice(activeLevel,1); activeLevel=Math.min(activeLevel,levels.length-1) } selectedBrick=null; bumpLevel(); if(editingLevel)refreshEditBricks(); updateLevelUI() })
+document.getElementById('level-edit-btn').addEventListener('click',()=>setEditingLevel(!editingLevel))
+
+// ── Levels: canvas placement / drag / edit ──
+canvas.addEventListener('mousedown',e=>{
+  if(!editingLevel) return
+  const px=e.offsetX, py=e.offsetY, hit=brickAt(px,py)
+  if(hit){ selectedBrick=hit; levelDrag={brick:hit, dx:px-hit.x, dy:py-hit.y, moved:false} }
+  else {
+    const b={id:nextLevelBrickId++, x:px, y:py, note:levelBrush.note, color:levelBrush.color, velLock:levelBrush.velLock||0, durability:levelBrush.durability,
+      shape:levelBrush.shape||'rect', shapeW:levelBrush.shapeW||72, shapeH:levelBrush.shapeH||22, shapeR:levelBrush.shapeR||20, shapeSides:levelBrush.shapeSides||6, shapeSize:levelBrush.shapeSize||28}
+    activeBricks().push(b); selectedBrick=b; bumpLevel(); refreshEditBricks(); updateLevelUI()
+  }
+})
+canvas.addEventListener('mousemove',e=>{
+  if(!editingLevel||!levelDrag) return
+  levelDrag.brick.x=e.offsetX-levelDrag.dx; levelDrag.brick.y=e.offsetY-levelDrag.dy; levelDrag.moved=true
+  bumpLevel(); refreshEditBricks()
+})
+function endLevelDrag(){ if(!levelDrag) return; const d=levelDrag; levelDrag=null; if(!d.moved) openEditor(d.brick,'level') }
+canvas.addEventListener('mouseup',endLevelDrag)
+canvas.addEventListener('mouseleave',()=>{ if(levelDrag){ levelDrag=null } })
+updateLevelUI()
 
 function wireRange(id,valId,key,fmt){
   const el=document.getElementById(id),ve=document.getElementById(valId)

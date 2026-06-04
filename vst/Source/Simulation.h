@@ -36,6 +36,11 @@ public:
 
     struct Edge { int note = 48; bool enabled = false; int velLock = 0; };
 
+    // A brick placed by the level editor. spec.durability < 0 => permanent.
+    struct LevelBrick { Slot spec; float x = 0, y = 0; };
+
+    enum BrickSource { Random = 0, Level = 1 };
+
     enum MouseMode { MouseOff = 0, ForceField = 1, Cage = 2, Breakout = 3 };
 
     struct Params
@@ -65,6 +70,10 @@ public:
         Edge              edges[4];   // top, right, bottom, left
         float             width  = 1000.0f;
         float             height = 600.0f;
+
+        int                     brickSource = Random;
+        std::vector<LevelBrick> level;          // placed bricks (level mode)
+        int                     levelVersion = 0; // bumped by the editor on change
     };
 
     struct NoteEvent { int note = 0; int velocity = 0; int channel = 1; int durationMs = 200; };
@@ -115,6 +124,7 @@ private:
         bool  alive = true;
         int   hitsLeft = 1;
         int   flash = 0;
+        bool  permanent = false; // level bricks that never break
     };
 
     Config config;
@@ -126,6 +136,8 @@ private:
 
     float mouseX = 0.0f, mouseY = 0.0f;
     bool  mouseActive = false;
+    int   appliedLevelVersion = -1;
+    void  buildLevel();
 
     void applyMouseForce (Ball& b);                                   // force field (per step)
     void applyCage       (Ball& b);                                   // cage wall (per substep)

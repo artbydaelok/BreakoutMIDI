@@ -62,6 +62,30 @@ namespace
             }
         }
 
+        c.brickSource  = asInt (v.getProperty ("brickSource",  {}), 0);
+        c.levelVersion = asInt (v.getProperty ("levelVersion", {}), 0);
+        if (auto* larr = v.getProperty ("level", juce::var()).getArray())
+        {
+            c.level.clear();
+            for (const auto& lv : *larr)
+            {
+                Simulation::LevelBrick lb;
+                lb.x = asFloat (lv.getProperty ("x", {}), 0.0f);
+                lb.y = asFloat (lv.getProperty ("y", {}), 0.0f);
+                lb.spec.id         = asInt   (lv.getProperty ("id",         {}), 0);
+                lb.spec.note       = asInt   (lv.getProperty ("note",       {}), 60);
+                lb.spec.velLock    = asInt   (lv.getProperty ("velLock",    {}), 0);
+                lb.spec.durability = asInt   (lv.getProperty ("durability", {}), -1);
+                lb.spec.shape      = asInt   (lv.getProperty ("shape",      {}), 0);
+                lb.spec.shapeW     = asFloat (lv.getProperty ("shapeW",     {}), 72.0f);
+                lb.spec.shapeH     = asFloat (lv.getProperty ("shapeH",     {}), 22.0f);
+                lb.spec.shapeR     = asFloat (lv.getProperty ("shapeR",     {}), 20.0f);
+                lb.spec.shapeSides = asInt   (lv.getProperty ("shapeSides", {}), 6);
+                lb.spec.shapeSize  = asFloat (lv.getProperty ("shapeSize",  {}), 28.0f);
+                c.level.push_back (lb);
+            }
+        }
+
         c.width  = asFloat (v.getProperty ("width",  {}), 1000.0f);
         c.height = asFloat (v.getProperty ("height", {}), 600.0f);
         return c;
