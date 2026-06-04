@@ -77,6 +77,8 @@ void BreakoutMidiEditor::timerCallback()
         auto* o = new juce::DynamicObject(); o->setProperty ("index", lv);
         webView.emitEventIfBrowserIsVisible ("activeLevelChanged", juce::var (o));
     }
+    if (proc.takeReloadPulse() > 0)
+        webView.emitEventIfBrowserIsVisible ("levelReload", juce::var());
 
     // Host MIDI in -> UI held notes (every tick)
     BreakoutMidiProcessor::MidiInEvent e;

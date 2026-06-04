@@ -116,6 +116,9 @@ public:
     // index once (then -1) so the editor can sync the UI's active level.
     int  takeActiveLevelChanged() { return activeLevelChanged.exchange (-1); }
 
+    // Non-zero once after the level reloads/loads (for a UI shake effect).
+    int  takeReloadPulse() { return reloadPulse.exchange (0); }
+
     // Cursor position (sim/canvas pixels). Pushed every frame by the processor.
     void setMouse (float x, float y, bool active) { mouseX = x; mouseY = y; mouseActive = active; }
 
@@ -162,6 +165,7 @@ private:
     bool  m_needReset = false;
     int   m_pendingLoad = -1;
     std::atomic<int> activeLevelChanged { -1 };
+    std::atomic<int> reloadPulse { 0 };
     void  buildLevel();
     void  loadLevel (int idx);
 

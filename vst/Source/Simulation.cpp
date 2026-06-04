@@ -507,8 +507,8 @@ void Simulation::step (double dt, std::vector<NoteEvent>& out)
         [] (Brick& b) { b.flash = std::max (0, b.flash - 1); return ! (b.alive || b.flash > 0); }),
         bricks.end());
 
-    if      (m_pendingLoad >= 0) loadLevel (m_pendingLoad); // a load-behaviour was hit
-    else if (m_needReset)        reset();                   // a reload-behaviour was hit
+    if      (m_pendingLoad >= 0) { loadLevel (m_pendingLoad); reloadPulse.fetch_add (1); } // load-behaviour
+    else if (m_needReset)        { reset();                   reloadPulse.fetch_add (1); } // reload-behaviour
 }
 
 void Simulation::writeSnapshot (RenderState& dest) const

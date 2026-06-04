@@ -52,6 +52,7 @@ public:
     void requestReset();
     void setMouse (float x, float y, bool active); // cursor for mouse modes
     int  takeActiveLevelChanged() { return sim.takeActiveLevelChanged(); }
+    int  takeReloadPulse() { return sim.takeReloadPulse(); }
 
     // Full UI/config blob: applies to the sim and is stored for persistence
     // (project save/load) and for restoring the UI when the editor reopens.

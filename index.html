@@ -67,8 +67,9 @@
   #transport { display: flex; gap: 8px; }
   #play-btn { flex: 1; font-size: 16px; padding: 8px; }
   #canvas-wrap { flex: 1; display: flex; align-items: center; justify-content: center; background: #0f0f0f; position: relative; }
-  canvas#sim { display: block; background: #111; border-radius: 4px; }
-  #overlay { position: absolute; top: 12px; right: 12px; font-size: 10px; color: #333; text-align: right; line-height: 1.7; }
+  #bg-shader { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 0; display: none; }
+  canvas#sim { display: block; background: transparent; border-radius: 4px; position: relative; z-index: 1; }
+  #overlay { position: absolute; top: 12px; right: 12px; font-size: 10px; color: #333; text-align: right; line-height: 1.7; z-index: 2; }
 </style>
 </head>
 <body>
@@ -233,6 +234,23 @@
     <div id="note-slots"></div>
     <button class="btn" id="add-note-btn">+ Add Note</button>
   </div>
+
+  <!-- VISUAL FX -->
+  <div>
+    <details>
+      <summary class="section-label" style="cursor:pointer;outline:none">Visual FX ▸</summary>
+      <div class="knob-row"><label>Particles</label><div style="flex:2"><input type="checkbox" id="fx-particles" checked style="width:14px;height:14px;accent-color:#4a6fa5;cursor:pointer"></div></div>
+      <div class="knob-row"><label>Ball Squash</label><div style="flex:2"><input type="checkbox" id="fx-squash" checked style="width:14px;height:14px;accent-color:#4a6fa5;cursor:pointer"></div></div>
+      <div class="knob-row"><label>Reload Shake</label><div style="flex:2"><input type="checkbox" id="fx-shake" checked style="width:14px;height:14px;accent-color:#4a6fa5;cursor:pointer"></div></div>
+      <div class="knob-row"><label>Background</label><div style="flex:2"><input type="checkbox" id="fx-shader" style="width:14px;height:14px;accent-color:#7a5aa5;cursor:pointer"></div></div>
+      <div id="fx-shader-params" style="display:none">
+        <div class="knob-row"><label>Speed</label><input type="range" id="fx-sh-speed" min="0" max="2" step="0.05" value="0.5"><span class="val" id="fx-sh-speed-val">0.5</span></div>
+        <div class="knob-row"><label>Scale</label><input type="range" id="fx-sh-scale" min="0.5" max="8" step="0.1" value="2.5"><span class="val" id="fx-sh-scale-val">2.5</span></div>
+        <div class="knob-row"><label>Hue</label><input type="range" id="fx-sh-hue" min="0" max="1" step="0.01" value="0.6"><span class="val" id="fx-sh-hue-val">0.60</span></div>
+        <div class="knob-row"><label>Intensity</label><input type="range" id="fx-sh-intensity" min="0" max="1" step="0.02" value="0.45"><span class="val" id="fx-sh-intensity-val">0.45</span></div>
+      </div>
+    </details>
+  </div>
 </div>
 
 <div id="note-editor">
@@ -334,6 +352,7 @@
 </div>
 
 <div id="canvas-wrap">
+  <canvas id="bg-shader"></canvas>
   <canvas id="sim"></canvas>
   <div id="overlay">impact speed → MIDI velocity</div>
 </div>
@@ -768,7 +787,7 @@ function render() {
     }
     const fx=ball.fx||{squash:0,nx:1,ny:0}
     if(fx.squash>0.004) fx.squash*=0.8; else fx.squash=0
-    const sq=fx.squash||0
+    const sq=vfx.squash?(fx.squash||0):0
     ctx.save(); ctx.translate(ball.x,ball.y); ctx.rotate(Math.atan2(fx.ny,fx.nx)); ctx.scale(1-0.55*sq, 1+0.4*sq)
     ctx.beginPath();ctx.arc(0,0,ball.r,0,Math.PI*2)
     ctx.fillStyle='#fff';ctx.shadowColor='#88aaff';ctx.shadowBlur=16;ctx.fill();ctx.shadowBlur=0
@@ -838,8 +857,11 @@ const workerBlob = new Blob([`setInterval(()=>postMessage(performance.now()),${1
 const ticker = new Worker(URL.createObjectURL(workerBlob))
 ticker.onmessage = e => update(e.data)
 
-function renderLoop(){
+let _lastRL=0
+function renderLoop(ts){
   if(typeof pluginMode!=='undefined' && pluginMode) juceInvoke('setMouse', pluginMouse.x, pluginMouse.y, pluginMouse.active)
+  if(typeof vfx!=='undefined' && vfx.shader && typeof glOk!=='undefined' && glOk){ const dt=_lastRL?Math.min(0.05,((ts||0)-_lastRL)/1000):0.016; drawShader(dt) }
+  _lastRL=ts||0
   render(); requestAnimationFrame(renderLoop)
 }
 requestAnimationFrame(renderLoop)
@@ -947,12 +969,21 @@ async function initMIDI(){
 const juceBackend = (window.__JUCE__ && window.__JUCE__.backend) ? window.__JUCE__.backend : null
 const pluginMode = !!juceBackend
 let pluginBallTrails = []
-// ── Juice: particles, screen shake, per-ball squash ──
+// ── Juice: particles, screen shake, per-ball squash, background shader ──
 let particles=[], shakeMag=0, ballFx=[]
-function spawnParticles(x,y,color){
-  const n=10+Math.floor(Math.random()*8)
-  for(let i=0;i<n;i++){ const a=Math.random()*Math.PI*2, sp=1+Math.random()*4.5
-    particles.push({x,y,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp-1.2,life:1,color:color||'#fff',size:2+Math.random()*2.5}) }
+let vfx={ particles:true, squash:true, shake:true, shader:false, shSpeed:0.5, shScale:2.5, shHue:0.60, shIntensity:0.45 }
+function randomPointInBrick(b){
+  const sh=b.shape||'rect'
+  if(sh==='circle'){ const a=Math.random()*Math.PI*2, rr=Math.sqrt(Math.random())*(b.r||10); return {x:b.cx+Math.cos(a)*rr, y:b.cy+Math.sin(a)*rr} }
+  if(sh==='polygon'){ const a=Math.random()*Math.PI*2, rr=Math.sqrt(Math.random())*(b.size||20); return {x:b.cx+Math.cos(a)*rr, y:b.cy+Math.sin(a)*rr} }
+  const w=b.w||72, h=b.h||22, x0=(b.x!=null?b.x:b.cx-w/2), y0=(b.y!=null?b.y:b.cy-h/2)
+  return {x:x0+Math.random()*w, y:y0+Math.random()*h}
+}
+function spawnParticles(br){
+  if(!vfx.particles) return
+  const n=10+Math.floor(Math.random()*8), color=(br.slot&&br.slot.color)||'#fff'
+  for(let i=0;i<n;i++){ const pt=randomPointInBrick(br), a=Math.random()*Math.PI*2, sp=1+Math.random()*4.5
+    particles.push({x:pt.x,y:pt.y,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp-1.2,life:1,color,size:2+Math.random()*2.5}) }
   if(particles.length>700) particles.splice(0, particles.length-700)
 }
 
@@ -977,7 +1008,7 @@ function buildConfig(){
     brickSource: brickSource==='level'?1:0,
     activeLevel, levelVersion,
     levels: levels.map(L=>({name:L.name, bricks:L.bricks, spawnX:L.spawnX||0, spawnY:L.spawnY||0, spawnAngle:L.spawnAngle||0, hasSpawn:!!L.hasSpawn})),
-    lockedParams,
+    lockedParams, vfx,
     width: canvas.width, height: canvas.height, playing: !!playing
   }
 }
@@ -1047,6 +1078,7 @@ function restoreUiState(st){
   if(st.activeLevel!=null) activeLevel = Math.max(0, Math.min(st.activeLevel, levels.length-1))
   if(st.levelVersion!=null) levelVersion = st.levelVersion
   if(st.lockedParams && typeof st.lockedParams==='object'){ lockedParams = {...st.lockedParams}; if(typeof applyLocks==='function') applyLocks() }
+  if(st.vfx && typeof st.vfx==='object'){ Object.assign(vfx, st.vfx); if(typeof updateFxUI==='function') updateFxUI() }
   if(st.playing!=null) playing=!!st.playing
   refreshControls()
 }
@@ -1082,7 +1114,7 @@ if(juceBackend){
       for(let i=0;i<n;i++){ const o=i*6, br=cachedBricks[i]; if(!br)continue
         const nowAlive=!!sb[o+3]
         if(br._wasAlive===undefined) br._wasAlive=nowAlive
-        if(br._wasAlive && !nowAlive) spawnParticles(br.cx, br.cy, br.slot.color)   // brick broke → burst
+        if(br._wasAlive && !nowAlive) spawnParticles(br)   // brick broke → burst from anywhere in the shape
         br._wasAlive=nowAlive
         br.alive=nowAlive; br.hitsLeft=sb[o+4]; br.flash=sb[o+5]
         if(sb[o+5]>=7 && br.slot.color){ noteFlash.color=br.slot.color; noteFlash.t=1 }
@@ -1099,10 +1131,9 @@ if(juceBackend){
       const sp=Math.hypot(vx,vy), psp=Math.hypot(fx.pvx,fx.pvy)
       if(sp>0.01 && psp>0.01){
         const dot=(vx*fx.pvx+vy*fx.pvy)/(sp*psp)
-        if(dot<0.55){ // sharp direction change = bounce
+        if(dot<0.55){ // sharp direction change = bounce -> squash
           const ix=vx-fx.pvx, iy=vy-fx.pvy, il=Math.hypot(ix,iy)||1
           fx.squash=Math.min(1,(1-dot)); fx.nx=ix/il; fx.ny=iy/il
-          if(x<BALL_R+4||x>W-BALL_R-4||y<BALL_R+4||y>H-BALL_R-4) shakeMag=Math.min(9, shakeMag+3+sp*0.12) // edge hit → shake
         }
       }
       fx.pvx=vx; fx.pvy=vy; ballFx[i]=fx
@@ -1127,6 +1158,8 @@ if(juceBackend){
     const idx=d.index|0
     if(idx>=0 && idx<levels.length){ activeLevel=idx; cachedKey=''; if(editingLevel)refreshEditBricks(); updateLevelUI() }
   })
+  // Level reloaded/loaded -> screen shake (repurposed from edge bounces)
+  juceBackend.addEventListener('levelReload', () => { if(vfx.shake) shakeMag=14 })
   // Restore persisted state from C++ (window reopen / project reload), then
   // start pushing UI changes. Fallback in case getState doesn't resolve.
   let __inited=false
@@ -1524,6 +1557,49 @@ function injectLocks(){
   applyLocks()
 }
 injectLocks()
+
+// ── Visual FX: background noise shader (WebGL) + toggles ──
+let glCtx=null, glU={}, glOk=false, shaderTime=0
+function initShader(){
+  const cv=document.getElementById('bg-shader'); if(!cv)return
+  let gl=null; try{ gl=cv.getContext('webgl')||cv.getContext('experimental-webgl') }catch(e){}
+  if(!gl)return
+  const vsrc='attribute vec2 p;void main(){gl_Position=vec4(p,0.,1.);}'
+  const fsrc='precision highp float;uniform vec2 uRes;uniform float uTime,uScale,uHue,uIntensity;'+
+    'float hash(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}'+
+    'float noise(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);float a=hash(i),b=hash(i+vec2(1,0)),c=hash(i+vec2(0,1)),d=hash(i+vec2(1,1));return mix(mix(a,b,f.x),mix(c,d,f.x),f.y);}'+
+    'float fbm(vec2 p){float v=0.,a=.5;for(int i=0;i<5;i++){v+=a*noise(p);p=p*2.+vec2(1.7,9.2);a*=.5;}return v;}'+
+    'vec3 hsv(vec3 c){vec4 K=vec4(1.,2./3.,1./3.,3.);vec3 p=abs(fract(c.xxx+K.xyz)*6.-K.www);return c.z*mix(K.xxx,clamp(p-K.xxx,0.,1.),c.y);}'+
+    'void main(){vec2 uv=gl_FragCoord.xy/uRes.xy;uv.x*=uRes.x/uRes.y;vec2 p=uv*uScale;float t=uTime*0.2;'+
+    'vec2 q=vec2(fbm(p+t),fbm(p+vec2(5.2,1.3)-t));float n=fbm(p+4.*q+t*0.5);'+
+    'float hue=fract(uHue+n*0.5+t*0.05);vec3 col=hsv(vec3(hue,0.75,0.35+0.65*n));'+
+    'gl_FragColor=vec4(col*uIntensity,1.0);}'
+  function mk(ty,s){const sh=gl.createShader(ty);gl.shaderSource(sh,s);gl.compileShader(sh);if(!gl.getShaderParameter(sh,gl.COMPILE_STATUS)){console.warn('shader',gl.getShaderInfoLog(sh));return null}return sh}
+  const v=mk(gl.VERTEX_SHADER,vsrc),f=mk(gl.FRAGMENT_SHADER,fsrc);if(!v||!f)return
+  const pr=gl.createProgram();gl.attachShader(pr,v);gl.attachShader(pr,f);gl.linkProgram(pr)
+  if(!gl.getProgramParameter(pr,gl.LINK_STATUS)){console.warn('link',gl.getProgramInfoLog(pr));return}
+  gl.useProgram(pr)
+  const b=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,b);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,1,-1,-1,1,1,1]),gl.STATIC_DRAW)
+  const lp=gl.getAttribLocation(pr,'p');gl.enableVertexAttribArray(lp);gl.vertexAttribPointer(lp,2,gl.FLOAT,false,0,0)
+  glCtx=gl;glU={res:gl.getUniformLocation(pr,'uRes'),time:gl.getUniformLocation(pr,'uTime'),scale:gl.getUniformLocation(pr,'uScale'),hue:gl.getUniformLocation(pr,'uHue'),intensity:gl.getUniformLocation(pr,'uIntensity')}
+  glOk=true; resizeShader()
+}
+function resizeShader(){ const cv=document.getElementById('bg-shader'); if(!cv||!glCtx)return; const w=document.getElementById('canvas-wrap'); cv.width=Math.max(2,Math.floor(w.clientWidth*0.6)); cv.height=Math.max(2,Math.floor(w.clientHeight*0.6)); glCtx.viewport(0,0,cv.width,cv.height) }
+function drawShader(dt){ if(!glOk)return; shaderTime+=dt*vfx.shSpeed; const gl=glCtx,cv=gl.canvas; gl.uniform2f(glU.res,cv.width,cv.height); gl.uniform1f(glU.time,shaderTime); gl.uniform1f(glU.scale,vfx.shScale); gl.uniform1f(glU.hue,vfx.shHue); gl.uniform1f(glU.intensity,vfx.shIntensity); gl.drawArrays(gl.TRIANGLE_STRIP,0,4) }
+function updateFxUI(){
+  const setC=(id,v)=>{const e=document.getElementById(id);if(e)e.checked=v}
+  setC('fx-particles',vfx.particles); setC('fx-squash',vfx.squash); setC('fx-shake',vfx.shake); setC('fx-shader',vfx.shader)
+  const sr=(id,v,fmt)=>{const e=document.getElementById(id);if(e)e.value=v;const ve=document.getElementById(id+'-val');if(ve)ve.textContent=fmt?fmt(v):v}
+  sr('fx-sh-speed',vfx.shSpeed); sr('fx-sh-scale',vfx.shScale); sr('fx-sh-hue',vfx.shHue,v=>(+v).toFixed(2)); sr('fx-sh-intensity',vfx.shIntensity,v=>(+v).toFixed(2))
+  const sp=document.getElementById('fx-shader-params'); if(sp)sp.style.display=vfx.shader?'block':'none'
+  const cv=document.getElementById('bg-shader'); if(cv)cv.style.display=vfx.shader?'block':'none'
+  if(vfx.shader) resizeShader()
+}
+;['particles','squash','shake','shader'].forEach(k=>{ const e=document.getElementById('fx-'+k); if(e)e.addEventListener('change',ev=>{ vfx[k]=ev.target.checked; updateFxUI() }) })
+function wireFxRange(id,key,fmt){ const e=document.getElementById(id),ve=document.getElementById(id+'-val'); if(!e)return; e.addEventListener('input',()=>{ vfx[key]=parseFloat(e.value); if(ve)ve.textContent=fmt?fmt(e.value):e.value }) }
+wireFxRange('fx-sh-speed','shSpeed'); wireFxRange('fx-sh-scale','shScale'); wireFxRange('fx-sh-hue','shHue',v=>(+v).toFixed(2)); wireFxRange('fx-sh-intensity','shIntensity',v=>(+v).toFixed(2))
+initShader(); updateFxUI()
+window.addEventListener('resize', resizeShader)
 
 function wireRange(id,valId,key,fmt){
   const el=document.getElementById(id),ve=document.getElementById(valId)
