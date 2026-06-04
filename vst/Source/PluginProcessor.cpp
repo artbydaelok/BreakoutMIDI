@@ -59,6 +59,7 @@ namespace
                 c.edges[i].note    = asInt  (ev.getProperty ("note",    {}), 48);
                 c.edges[i].enabled = asBool (ev.getProperty ("enabled", {}), false);
                 c.edges[i].velLock = asInt  (ev.getProperty ("velLock", {}), 0);
+                c.edges[i].fail    = asBool (ev.getProperty ("fail",    {}), false);
             }
         }
 

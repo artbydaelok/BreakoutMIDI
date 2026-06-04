@@ -34,7 +34,7 @@ public:
         int   shapeSides = 6;       float shapeSize = 28.0f; // polygon
     };
 
-    struct Edge { int note = 48; bool enabled = false; int velLock = 0; };
+    struct Edge { int note = 48; bool enabled = false; int velLock = 0; bool fail = false; };
 
     // A brick placed by the level editor. spec.durability < 0 => permanent.
     struct LevelBrick { Slot spec; float x = 0, y = 0; };

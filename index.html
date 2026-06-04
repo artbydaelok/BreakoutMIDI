@@ -299,6 +299,13 @@
     <input type="range" id="ed-vel-lock" min="0" max="127" value="0" step="1">
     <span class="val" id="ed-vel-lock-val">Auto</span>
   </div>
+  <div class="editor-row" id="ed-fail-row" style="display:none">
+    <label>On Pass</label>
+    <div style="flex:2;display:flex;align-items:center;gap:8px">
+      <input type="checkbox" id="ed-fail" style="width:14px;height:14px;accent-color:#f55;cursor:pointer">
+      <span style="color:#666;font-size:10px" id="ed-fail-label">Bounce</span>
+    </div>
+  </div>
   <div class="editor-row" id="ed-permanent-row" style="display:none">
     <label>Permanent</label>
     <div style="flex:2;display:flex;align-items:center;gap:8px">
@@ -348,10 +355,10 @@ let noteSlots = [
 let nextSlotId = 5
 
 let edgeSlots = {
-  top:    {note:48,enabled:false,velLock:0,color:'#4af5c0'},
-  right:  {note:50,enabled:false,velLock:0,color:'#f5e44a'},
-  bottom: {note:52,enabled:false,velLock:0,color:'#f54a9a'},
-  left:   {note:53,enabled:false,velLock:0,color:'#4af5f5'},
+  top:    {note:48,enabled:false,velLock:0,color:'#4af5c0',fail:false},
+  right:  {note:50,enabled:false,velLock:0,color:'#f5e44a',fail:false},
+  bottom: {note:52,enabled:false,velLock:0,color:'#f54a9a',fail:false},
+  left:   {note:53,enabled:false,velLock:0,color:'#4af5f5',fail:false},
 }
 
 let playing=false, balls=[], bricks=[], spawnTimer=0
@@ -670,8 +677,9 @@ function render() {
     {s:edgeSlots.left,fn:()=>ctx.fillRect(0,0,3,canvas.height)},
   ]
   for(const {s,fn} of edgeDefs){
-    if(!s.enabled)continue
-    ctx.globalAlpha=.35;ctx.fillStyle=s.color;ctx.shadowColor=s.color;ctx.shadowBlur=10;fn();ctx.shadowBlur=0;ctx.globalAlpha=1
+    if(!s.enabled&&!s.fail)continue
+    const col=s.fail?'#ff4a4a':s.color
+    ctx.globalAlpha=s.fail?.6:.35;ctx.fillStyle=col;ctx.shadowColor=col;ctx.shadowBlur=s.fail?14:10;fn();ctx.shadowBlur=0;ctx.globalAlpha=1
   }
   for(const b of bricks){
     ctx.globalAlpha=b.alive?1:b.flash/12
@@ -913,7 +921,7 @@ function buildConfig(){
       velLock:s.velLock||0, durability:s.durability||1, shape:shapeToInt(s.shape||'rect'),
       shapeW:s.shapeW||72, shapeH:s.shapeH||22, shapeR:s.shapeR||20, shapeSides:s.shapeSides||6, shapeSize:s.shapeSize||28,
       color:s.color, held:!!s.held })),
-    edges:[edgeSlots.top,edgeSlots.right,edgeSlots.bottom,edgeSlots.left].map(e=>({note:e.note,enabled:e.enabled,velLock:e.velLock||0,color:e.color})),
+    edges:[edgeSlots.top,edgeSlots.right,edgeSlots.bottom,edgeSlots.left].map(e=>({note:e.note,enabled:e.enabled,velLock:e.velLock||0,color:e.color,fail:!!e.fail})),
     brickSource: brickSource==='level'?1:0,
     activeLevel, levelVersion,
     levels: levels.map(L=>({name:L.name, bricks:L.bricks})),
@@ -975,7 +983,7 @@ function restoreUiState(st){
   }
   if(Array.isArray(st.edges)){
     const names=['top','right','bottom','left']
-    st.edges.forEach((e,i)=>{ if(names[i]) edgeSlots[names[i]]={note:e.note,enabled:!!e.enabled,velLock:e.velLock||0,color:e.color||edgeSlots[names[i]].color} })
+    st.edges.forEach((e,i)=>{ if(names[i]) edgeSlots[names[i]]={note:e.note,enabled:!!e.enabled,velLock:e.velLock||0,color:e.color||edgeSlots[names[i]].color,fail:!!e.fail} })
   }
   if(st.brickSource!=null) brickSource = st.brickSource===1?'level':'random'
   if(Array.isArray(st.levels)){
@@ -1163,9 +1171,9 @@ function renderNoteSlots(){
 function renderEdgeSlots(){
   for(const[edge,slot]of Object.entries(edgeSlots)){
     const el=document.querySelector(`.edge-slot[data-edge="${edge}"]`);if(!el)continue
-    el.style.setProperty('--slot-color',slot.color)
-    el.className='edge-slot'+(slot.enabled?' active':'')
-    el.querySelector('.edge-note').textContent=slot.enabled?midiToName(slot.note):'—'
+    el.style.setProperty('--slot-color',slot.fail?'#ff5555':slot.color)
+    el.className='edge-slot'+((slot.enabled||slot.fail)?' active':'')
+    el.querySelector('.edge-note').textContent=slot.fail?'⟲ OUT':(slot.enabled?midiToName(slot.note):'—')
   }
 }
 
@@ -1192,6 +1200,8 @@ function openEditor(slot,type){
   document.getElementById('ed-permanent').checked=perm
   document.getElementById('ed-permanent-label').textContent=perm?'∞ (never breaks)':'breakable'
   document.getElementById('ed-shape-section').style.display=isEdge?'none':'block'
+  document.getElementById('ed-fail-row').style.display=isEdge?'flex':'none'
+  if(isEdge){ document.getElementById('ed-fail').checked=!!slot.fail; document.getElementById('ed-fail-label').textContent=slot.fail?'Reload level':'Bounce' }
   if(!isEdge){
     const sh=slot.shape||'rect'
     setEditorShape(sh)
@@ -1232,6 +1242,9 @@ document.getElementById('ed-save').addEventListener('click',()=>{
   editingSlot.note=parseInt(document.getElementById('ed-note').value)
   editingSlot.color=document.getElementById('ed-color').value
   editingSlot.velLock=parseInt(document.getElementById('ed-vel-lock').value)
+  if(editingType==='top'||editingType==='right'||editingType==='bottom'||editingType==='left'){
+    editingSlot.fail = document.getElementById('ed-fail').checked
+  }
   if(editingType==='brick') {
     editingSlot.prob=parseInt(document.getElementById('ed-prob').value)
     editingSlot.durability=parseInt(document.getElementById('ed-durability').value)
@@ -1266,6 +1279,9 @@ document.getElementById('ed-delete').addEventListener('click',()=>{
 document.getElementById('ed-permanent').addEventListener('change',e=>{
   document.getElementById('ed-permanent-label').textContent=e.target.checked?'∞ (never breaks)':'breakable'
   document.getElementById('ed-durability-row').style.display=e.target.checked?'none':'flex'
+})
+document.getElementById('ed-fail').addEventListener('change',e=>{
+  document.getElementById('ed-fail-label').textContent=e.target.checked?'Reload level':'Bounce'
 })
 document.getElementById('add-note-btn').addEventListener('click',()=>{
   const s={id:nextSlotId++,note:60+Math.floor(Math.random()*24),prob:50,color:'#'+Math.floor(Math.random()*0xffffff).toString(16).padStart(6,'0'),enabled:true,velLock:0,durability:1,...defaultShape()}

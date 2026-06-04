@@ -417,6 +417,16 @@ void Simulation::step (double dt, std::vector<NoteEvent>& out)
     const float grav = hail ? config.params.gravity : 0.0f;
     const float W = config.width, H = config.height;
 
+    bool needReset = false;
+    // Edge contact: emit the edge note, and if the edge is a "fail" edge, flag a
+    // level reload. Returns true if the edge failed (caller should not bounce).
+    auto contact = [&] (int e, float stepSpd) -> bool
+    {
+        if (config.edges[e].enabled) emitNote (config.edges[e].note, config.edges[e].velLock, stepSpd, out);
+        if (config.edges[e].fail) { needReset = true; return true; }
+        return false;
+    };
+
     for (int bi = (int) balls.size() - 1; bi >= 0; --bi)
     {
         Ball& ball = balls[(size_t) bi];
@@ -436,17 +446,17 @@ void Simulation::step (double dt, std::vector<NoteEvent>& out)
 
             if (hail)
             {
-                if (ball.x - ball.r < 0) { ball.x = ball.r; ball.vx = std::abs (ball.vx); if (config.edges[3].enabled) emitNote (config.edges[3].note, config.edges[3].velLock, stepSpd, out); }
-                if (ball.x + ball.r > W) { ball.x = W - ball.r; ball.vx = -std::abs (ball.vx); if (config.edges[1].enabled) emitNote (config.edges[1].note, config.edges[1].velLock, stepSpd, out); }
-                if (ball.y - ball.r < 0) { ball.y = ball.r; ball.vy = std::abs (ball.vy); if (config.edges[0].enabled) emitNote (config.edges[0].note, config.edges[0].velLock, stepSpd, out); }
-                if (ball.y - ball.r > H) { if (config.edges[2].enabled) emitNote (config.edges[2].note, config.edges[2].velLock, stepSpd, out); balls[(size_t) bi] = makeBall(); respawned = true; break; }
+                if (ball.x - ball.r < 0) { if (! contact (3, stepSpd)) { ball.x = ball.r;     ball.vx =  std::abs (ball.vx); } }
+                if (ball.x + ball.r > W) { if (! contact (1, stepSpd)) { ball.x = W - ball.r; ball.vx = -std::abs (ball.vx); } }
+                if (ball.y - ball.r < 0) { if (! contact (0, stepSpd)) { ball.y = ball.r;     ball.vy =  std::abs (ball.vy); } }
+                if (ball.y - ball.r > H) { contact (2, stepSpd); balls[(size_t) bi] = makeBall(); respawned = true; break; }
             }
             else
             {
-                if (ball.x - ball.r < 0) { ball.x = ball.r; ball.vx = std::abs (ball.vx); if (config.edges[3].enabled) emitNote (config.edges[3].note, config.edges[3].velLock, stepSpd, out); }
-                if (ball.x + ball.r > W) { ball.x = W - ball.r; ball.vx = -std::abs (ball.vx); if (config.edges[1].enabled) emitNote (config.edges[1].note, config.edges[1].velLock, stepSpd, out); }
-                if (ball.y - ball.r < 0) { ball.y = ball.r; ball.vy = std::abs (ball.vy); if (config.edges[0].enabled) emitNote (config.edges[0].note, config.edges[0].velLock, stepSpd, out); }
-                if (ball.y + ball.r > H) { ball.y = H - ball.r; ball.vy = -std::abs (ball.vy); if (config.edges[2].enabled) emitNote (config.edges[2].note, config.edges[2].velLock, stepSpd, out); }
+                if (ball.x - ball.r < 0) { if (! contact (3, stepSpd)) { ball.x = ball.r;     ball.vx =  std::abs (ball.vx); } }
+                if (ball.x + ball.r > W) { if (! contact (1, stepSpd)) { ball.x = W - ball.r; ball.vx = -std::abs (ball.vx); } }
+                if (ball.y - ball.r < 0) { if (! contact (0, stepSpd)) { ball.y = ball.r;     ball.vy =  std::abs (ball.vy); } }
+                if (ball.y + ball.r > H) { if (! contact (2, stepSpd)) { ball.y = H - ball.r; ball.vy = -std::abs (ball.vy); } }
             }
 
             for (auto& brick : bricks)
@@ -466,6 +476,8 @@ void Simulation::step (double dt, std::vector<NoteEvent>& out)
     bricks.erase (std::remove_if (bricks.begin(), bricks.end(),
         [] (Brick& b) { b.flash = std::max (0, b.flash - 1); return ! (b.alive || b.flash > 0); }),
         bricks.end());
+
+    if (needReset) reset(); // a ball passed a "fail" edge -> reload the level
 }
 
 void Simulation::writeSnapshot (RenderState& dest) const
