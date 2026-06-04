@@ -1186,6 +1186,7 @@ pianoCanvas.addEventListener('click',e=>{
   document.getElementById('ed-note').value=note
   document.getElementById('ed-note-val').textContent=midiToName(note)
   drawPiano(note)
+  if(typeof applyEditorLive==='function') applyEditorLive()
 })
 
 function updatePianoLabel(){document.getElementById('piano-oct-label').textContent=`C${pianoOctaveStart} - B${pianoOctaveStart+PIANO_OCTAVES-1}`}
@@ -1214,9 +1215,10 @@ function renderEdgeSlots(){
   }
 }
 
-let editingSlot=null,editingType='brick'
+let editingSlot=null,editingType='brick',editBackup=null
 function openEditor(slot,type){
   editingSlot=slot;editingType=type
+  editBackup = (type==='level') ? {...slot} : null  // snapshot for cancel-revert
   const isEdge=(type==='top'||type==='right'||type==='bottom'||type==='left')
   const isLevel=type==='level'
   document.getElementById('ed-title').textContent=isEdge?`Edge: ${type}`:isLevel?'Edit Level Brick':'Edit Note Slot'
@@ -1274,14 +1276,14 @@ function setEditorShape(shape) {
   document.getElementById('ed-polygon-params').style.display = shape==='polygon' ? 'block' : 'none'
 }
 document.querySelectorAll('#ed-shape-btns .mode-btn').forEach(btn=>{
-  btn.addEventListener('click',()=>setEditorShape(btn.dataset.shape))
+  btn.addEventListener('click',()=>{ setEditorShape(btn.dataset.shape); applyEditorLive() })
 })
 document.getElementById('ed-shape-w').addEventListener('input',e=>{document.getElementById('ed-shape-w-val').textContent=e.target.value})
 document.getElementById('ed-shape-h').addEventListener('input',e=>{document.getElementById('ed-shape-h-val').textContent=e.target.value})
 document.getElementById('ed-shape-r').addEventListener('input',e=>{document.getElementById('ed-shape-r-val').textContent=e.target.value})
 document.getElementById('ed-shape-sides').addEventListener('input',e=>{document.getElementById('ed-shape-sides-val').textContent=e.target.value})
 document.getElementById('ed-shape-size').addEventListener('input',e=>{document.getElementById('ed-shape-size-val').textContent=e.target.value})
-document.getElementById('ed-save').addEventListener('click',()=>{
+function writeEditorToSlot(){
   if(!editingSlot)return
   editingSlot.note=parseInt(document.getElementById('ed-note').value)
   editingSlot.color=document.getElementById('ed-color').value
@@ -1313,11 +1315,23 @@ document.getElementById('ed-save').addEventListener('click',()=>{
     levelBrush={note:editingSlot.note,color:editingSlot.color,velLock:editingSlot.velLock,durability:editingSlot.durability,
       shape:editingSlot.shape,shapeW:editingSlot.shapeW,shapeH:editingSlot.shapeH,shapeR:editingSlot.shapeR,shapeSides:editingSlot.shapeSides,shapeSize:editingSlot.shapeSize,
       behavior:editingSlot.behavior||0,target:editingSlot.target||0}
-    bumpLevel(); refreshEditBricks(); updateLevelUI()
+    bumpLevel(); refreshEditBricks()
   }
-  document.getElementById('note-editor').classList.remove('open');renderNoteSlots();renderEdgeSlots()
+  renderNoteSlots();renderEdgeSlots()
+}
+// Live preview while editing a LEVEL brick — changes show on the canvas immediately
+function applyEditorLive(){ if(editingType==='level') writeEditorToSlot() }
+document.getElementById('note-editor').addEventListener('input', applyEditorLive)
+document.getElementById('note-editor').addEventListener('change', applyEditorLive)
+document.getElementById('ed-save').addEventListener('click',()=>{
+  writeEditorToSlot(); editBackup=null
+  document.getElementById('note-editor').classList.remove('open')
 })
-document.getElementById('ed-cancel').addEventListener('click',()=>document.getElementById('note-editor').classList.remove('open'))
+document.getElementById('ed-cancel').addEventListener('click',()=>{
+  if(editingType==='level' && editBackup && editingSlot){ Object.assign(editingSlot, editBackup); bumpLevel(); refreshEditBricks() }
+  editBackup=null
+  document.getElementById('note-editor').classList.remove('open')
+})
 document.getElementById('ed-delete').addEventListener('click',()=>{
   if(editingType==='level'){ const a=activeBricks(); const i=a.indexOf(editingSlot); if(i>=0)a.splice(i,1); selectedBrick=null; bumpLevel(); refreshEditBricks(); updateLevelUI(); document.getElementById('note-editor').classList.remove('open'); return }
   noteSlots=noteSlots.filter(s=>s!==editingSlot);document.getElementById('note-editor').classList.remove('open');renderNoteSlots()
