@@ -933,6 +933,7 @@ function buildConfig(){
     brickSource: brickSource==='level'?1:0,
     activeLevel, levelVersion,
     levels: levels.map(L=>({name:L.name, bricks:L.bricks})),
+    lockedParams,
     width: canvas.width, height: canvas.height, playing: !!playing
   }
 }
@@ -1001,6 +1002,7 @@ function restoreUiState(st){
   }
   if(st.activeLevel!=null) activeLevel = Math.max(0, Math.min(st.activeLevel, levels.length-1))
   if(st.levelVersion!=null) levelVersion = st.levelVersion
+  if(st.lockedParams && typeof st.lockedParams==='object'){ lockedParams = {...st.lockedParams}; if(typeof applyLocks==='function') applyLocks() }
   if(st.playing!=null) playing=!!st.playing
   refreshControls()
 }
@@ -1415,6 +1417,30 @@ function endLevelDrag(){ if(!levelDrag) return; const d=levelDrag; levelDrag=nul
 canvas.addEventListener('mouseup',endLevelDrag)
 canvas.addEventListener('mouseleave',()=>{ if(levelDrag){ levelDrag=null } })
 updateLevelUI()
+
+// ── Parameter locking (grey out + prevent changes; persisted) ──
+const LOCKABLE=['ball-speed','gravity','num-balls','spawn-rate','max-bricks','note-len','midi-channel','force-strength','cage-radius','paddle-size']
+let lockedParams={}
+function applyLocks(){
+  LOCKABLE.forEach(id=>{
+    const el=document.getElementById(id); if(!el)return
+    const locked=!!lockedParams[id]
+    el.disabled=locked
+    const row=el.closest('.knob-row,.editor-row'); if(row){ row.style.opacity=locked?'0.5':'1'; const lk=row.querySelector('.lock-toggle'); if(lk)lk.textContent=locked?'🔒':'🔓' }
+  })
+}
+function injectLocks(){
+  LOCKABLE.forEach(id=>{
+    const el=document.getElementById(id); if(!el)return
+    const row=el.closest('.knob-row,.editor-row'); if(!row||row.querySelector('.lock-toggle'))return
+    const lk=document.createElement('span'); lk.className='lock-toggle'; lk.textContent='🔓'
+    lk.title='Lock this parameter'; lk.style.cssText='cursor:pointer;font-size:10px;margin-left:4px;opacity:.55;user-select:none'
+    lk.addEventListener('click',ev=>{ ev.stopPropagation(); lockedParams[id]=!lockedParams[id]; applyLocks() })
+    row.appendChild(lk)
+  })
+  applyLocks()
+}
+injectLocks()
 
 function wireRange(id,valId,key,fmt){
   const el=document.getElementById(id),ve=document.getElementById(valId)
