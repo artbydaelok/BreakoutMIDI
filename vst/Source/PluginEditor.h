@@ -24,6 +24,7 @@ private:
     BreakoutMidiProcessor& proc;
     juce::WebBrowserComponent webView;
     int frameCounter = 0;
+    int lastStateEpoch = 0;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (BreakoutMidiEditor)
 };

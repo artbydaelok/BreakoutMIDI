@@ -57,6 +57,11 @@ public:
     void      setStateFromVar (const juce::var& v); // message thread
     juce::var getStateVar();                         // message thread
 
+    // Bumped whenever the host restores state (undo, preset, project load) so the
+    // editor can refresh the WebView UI from the restored blob.
+    int       getStateEpoch() const { return stateEpoch.load(); }
+    juce::var getRestoreVar();                        // message thread
+
     //== Bridge: simulation -> UI =============================================
     // Copies the latest published render state (allocates on the calling/
     // message thread, never on the audio thread).
@@ -82,6 +87,8 @@ private:
     // Persisted UI/config blob (message-thread access; guarded for safety).
     juce::CriticalSection stateLock;
     juce::String          stateJson;
+    juce::String          restoreJson;       // immutable snapshot at restore time
+    std::atomic<int>      stateEpoch { 0 };
 
     // Published render snapshot (audio -> message), preallocated.
     juce::SpinLock           snapLock;

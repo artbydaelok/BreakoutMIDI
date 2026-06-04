@@ -52,6 +52,7 @@ BreakoutMidiEditor::BreakoutMidiEditor (BreakoutMidiProcessor& p)
     setResizeLimits (640, 420, 4096, 2400);
     setSize (1040, 680);
 
+    lastStateEpoch = p.getStateEpoch();
     webView.goToURL (juce::WebBrowserComponent::getResourceProviderRoot());
     startTimerHz (60);
 }
@@ -63,6 +64,13 @@ void BreakoutMidiEditor::resized() { webView.setBounds (getLocalBounds()); }
 //==============================================================================
 void BreakoutMidiEditor::timerCallback()
 {
+    // Host restored state externally (undo / preset / project load): refresh UI
+    if (proc.getStateEpoch() != lastStateEpoch)
+    {
+        lastStateEpoch = proc.getStateEpoch();
+        webView.emitEventIfBrowserIsVisible ("restoreState", proc.getRestoreVar());
+    }
+
     // Host MIDI in -> UI held notes (every tick)
     BreakoutMidiProcessor::MidiInEvent e;
     while (proc.popMidiIn (e))

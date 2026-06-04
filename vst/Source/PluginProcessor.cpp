@@ -213,6 +213,13 @@ juce::var BreakoutMidiProcessor::getStateVar()
     return json.isEmpty() ? juce::var() : juce::JSON::parse (json);
 }
 
+juce::var BreakoutMidiProcessor::getRestoreVar()
+{
+    juce::String json;
+    { const juce::ScopedLock sl (stateLock); json = restoreJson; }
+    return json.isEmpty() ? juce::var() : juce::JSON::parse (json);
+}
+
 void BreakoutMidiProcessor::getStateInformation (juce::MemoryBlock& dest)
 {
     juce::String json;
@@ -225,7 +232,8 @@ void BreakoutMidiProcessor::setStateInformation (const void* data, int size)
     const juce::String json = juce::String::createStringFromData (data, size);
     if (json.isEmpty()) return;
     const auto v = juce::JSON::parse (json);
-    { const juce::ScopedLock sl (stateLock); stateJson = json; }
+    { const juce::ScopedLock sl (stateLock); stateJson = json; restoreJson = json; }
+    stateEpoch.fetch_add (1);
     setConfig (parseConfig (v));
     if (v.hasProperty ("playing")) setPlaying ((bool) v.getProperty ("playing", false));
 }
