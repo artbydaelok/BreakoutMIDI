@@ -34,6 +34,14 @@ Simulation::Ball Simulation::makeBall()
     b.r = 7.0f;
     const float s = config.params.ballSpeed;
 
+    if (config.brickSource == Level && config.hasSpawn)
+    {
+        b.x  = config.spawnX; b.y = config.spawnY;
+        b.vx = std::cos (config.spawnAngle) * s;
+        b.vy = std::sin (config.spawnAngle) * s;
+        return b;
+    }
+
     if (config.params.mode == Hail)
     {
         b.x  = b.r + rand01() * (config.width - 2 * b.r);
@@ -358,8 +366,10 @@ void Simulation::loadLevel (int idx)
 {
     if (idx >= 0 && idx < (int) config.levels.size())
     {
-        config.level       = config.levels[(size_t) idx];
+        const auto& L = config.levels[(size_t) idx];
+        config.level       = L.bricks;
         config.activeLevel = idx;
+        config.spawnX = L.spawnX; config.spawnY = L.spawnY; config.spawnAngle = L.spawnAngle; config.hasSpawn = L.hasSpawn;
         appliedActiveLevel = idx;
     }
     reset(); // respawns balls + rebuilds bricks from config.level

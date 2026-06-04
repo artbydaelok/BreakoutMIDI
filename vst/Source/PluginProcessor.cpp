@@ -97,14 +97,22 @@ namespace
             c.levels.clear();
             for (const auto& L : *larr)
             {
-                std::vector<Simulation::LevelBrick> bricks;
+                Simulation::LevelData ld;
                 if (auto* barr = L.getProperty ("bricks", juce::var()).getArray())
-                    for (const auto& lv : *barr) bricks.push_back (parseLevelBrick (lv));
-                c.levels.push_back (std::move (bricks));
+                    for (const auto& lv : *barr) ld.bricks.push_back (parseLevelBrick (lv));
+                ld.spawnX     = asFloat (L.getProperty ("spawnX",     {}), 0.0f);
+                ld.spawnY     = asFloat (L.getProperty ("spawnY",     {}), 0.0f);
+                ld.spawnAngle = asFloat (L.getProperty ("spawnAngle", {}), 0.0f);
+                ld.hasSpawn   = asBool  (L.getProperty ("hasSpawn",   {}), false);
+                c.levels.push_back (std::move (ld));
             }
         }
         if (c.activeLevel >= 0 && c.activeLevel < (int) c.levels.size())
-            c.level = c.levels[(size_t) c.activeLevel];
+        {
+            const auto& A = c.levels[(size_t) c.activeLevel];
+            c.level = A.bricks;
+            c.spawnX = A.spawnX; c.spawnY = A.spawnY; c.spawnAngle = A.spawnAngle; c.hasSpawn = A.hasSpawn;
+        }
 
         c.width  = asFloat (v.getProperty ("width",  {}), 1000.0f);
         c.height = asFloat (v.getProperty ("height", {}), 600.0f);

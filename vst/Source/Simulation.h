@@ -42,6 +42,14 @@ public:
     // A brick placed by the level editor. spec.durability < 0 => permanent.
     struct LevelBrick { Slot spec; float x = 0, y = 0; };
 
+    // One level: its bricks + an optional ball spawn point/direction.
+    struct LevelData
+    {
+        std::vector<LevelBrick> bricks;
+        float spawnX = 0, spawnY = 0, spawnAngle = 0;
+        bool  hasSpawn = false;
+    };
+
     enum BrickSource { Random = 0, Level = 1 };
 
     enum MouseMode { MouseOff = 0, ForceField = 1, Cage = 2, Breakout = 3 };
@@ -77,8 +85,10 @@ public:
         int                     brickSource = Random;
         std::vector<LevelBrick> level;          // active level's placed bricks
         int                     levelVersion = 0; // bumped by the editor on change
-        std::vector<std::vector<LevelBrick>> levels; // all levels (for load-level)
+        std::vector<LevelData>  levels;         // all levels (for load-level)
         int                     activeLevel = 0;
+        float spawnX = 0, spawnY = 0, spawnAngle = 0; // active level ball spawn
+        bool  hasSpawn = false;
     };
 
     struct NoteEvent { int note = 0; int velocity = 0; int channel = 1; int durationMs = 200; };

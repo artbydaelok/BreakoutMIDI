@@ -25,7 +25,7 @@
   .src-btn { flex: 1; background: #1c1c1c; border: 1px solid #2e2e2e; color: #888; border-radius: 4px; padding: 5px 4px; cursor: pointer; font-family: inherit; font-size: 10px; text-align: center; transition: all .1s; }
   .src-btn.active { background: #2a3a52; border-color: #4a6fa5; color: #a0c0ff; }
   #canvas-wrap.editing #sim { cursor: crosshair; }
-  #level-edit-btn.on { background: #3a2a52; border-color: #7a5aa5; color: #c8a8ff; }
+  #level-edit-btn.on, #level-spawn-btn.on { background: #3a2a52; border-color: #7a5aa5; color: #c8a8ff; }
   #note-slots { display: flex; flex-direction: column; gap: 6px; }
   .note-slot { background: #1c1c1c; border: 1px solid #2e2e2e; border-radius: 6px; padding: 8px 10px; display: grid; grid-template-columns: 14px 1fr auto auto; align-items: center; gap: 6px; cursor: pointer; transition: border-color .15s; }
   .note-slot:hover { border-color: #444; }
@@ -178,6 +178,7 @@
         <button class="btn danger" id="level-delete">Delete</button>
       </div>
       <button class="btn" id="level-edit-btn" style="width:100%;margin-top:4px">✎ Edit Level</button>
+      <button class="btn" id="level-spawn-btn" style="width:100%;margin-top:4px">◎ Set Ball Spawn</button>
       <div style="color:#666;font-size:9px;margin-top:5px;line-height:1.4" id="level-hint"></div>
     </div>
   </div>
@@ -382,6 +383,7 @@ let editingLevel=false
 let nextLevelBrickId=500001
 let levelBrush={note:60,color:'#4a9af5',velLock:0,durability:-1,...defaultShape()}
 let levelDrag=null
+let spawnSetMode=false
 let cachedBricks=[], cachedKey=''   // play-mode brick render cache (shared with edit refresh)
 function activeBricks(){ return (levels[activeLevel]||levels[0]).bricks }
 function bumpLevel(){ levelVersion++ }
@@ -795,6 +797,20 @@ function render() {
     ctx.save(); ctx.strokeStyle='#fff'; ctx.lineWidth=1.5; ctx.setLineDash([4,3]); ctx.globalAlpha=.9
     ctx.strokeRect(b.x-s, b.y-s, s*2, s*2); ctx.restore()
   }
+
+  // level editor: ball spawn point + direction arrow
+  if(editingLevel){
+    const L=levels[activeLevel]
+    if(L&&L.hasSpawn){
+      const a=L.spawnAngle||0, len=30, ex=L.spawnX+Math.cos(a)*len, ey=L.spawnY+Math.sin(a)*len
+      ctx.save(); ctx.fillStyle='#4ade80'; ctx.strokeStyle='#4ade80'; ctx.lineWidth=2; ctx.globalAlpha=.95
+      ctx.beginPath(); ctx.arc(L.spawnX,L.spawnY,6,0,Math.PI*2); ctx.fill()
+      ctx.beginPath(); ctx.moveTo(L.spawnX,L.spawnY); ctx.lineTo(ex,ey)
+      ctx.moveTo(ex,ey); ctx.lineTo(ex-Math.cos(a-0.4)*8, ey-Math.sin(a-0.4)*8)
+      ctx.moveTo(ex,ey); ctx.lineTo(ex-Math.cos(a+0.4)*8, ey-Math.sin(a+0.4)*8); ctx.stroke()
+      ctx.restore()
+    }
+  }
 }
 
 // Web Worker ticker — Chrome doesn't throttle workers in background tabs
@@ -932,7 +948,7 @@ function buildConfig(){
     edges:[edgeSlots.top,edgeSlots.right,edgeSlots.bottom,edgeSlots.left].map(e=>({note:e.note,enabled:e.enabled,velLock:e.velLock||0,color:e.color,behavior:e.behavior||0,target:e.target||0})),
     brickSource: brickSource==='level'?1:0,
     activeLevel, levelVersion,
-    levels: levels.map(L=>({name:L.name, bricks:L.bricks})),
+    levels: levels.map(L=>({name:L.name, bricks:L.bricks, spawnX:L.spawnX||0, spawnY:L.spawnY||0, spawnAngle:L.spawnAngle||0, hasSpawn:!!L.hasSpawn})),
     lockedParams,
     width: canvas.width, height: canvas.height, playing: !!playing
   }
@@ -996,7 +1012,7 @@ function restoreUiState(st){
   }
   if(st.brickSource!=null) brickSource = st.brickSource===1?'level':'random'
   if(Array.isArray(st.levels)){
-    levels = st.levels.map(L=>({name:L.name||'Level', bricks:(L.bricks||[]).map(b=>({...b}))}))
+    levels = st.levels.map(L=>({name:L.name||'Level', bricks:(L.bricks||[]).map(b=>({...b})), spawnX:L.spawnX||0, spawnY:L.spawnY||0, spawnAngle:L.spawnAngle||0, hasSpawn:!!L.hasSpawn}))
     if(!levels.length) levels=[{name:'Level 1',bricks:[]}]
     nextLevelBrickId = Math.max(nextLevelBrickId, 500001, ...levels.flatMap(L=>L.bricks.map(b=>(b.id||0)+1)))
   }
@@ -1370,12 +1386,15 @@ function updateLevelUI(){
   const hint=document.getElementById('level-hint'); if(hint) hint.textContent = editingLevel ? 'Click empty space to add a brick · click a brick to edit · drag to move' : (brickSource==='level' ? `${activeBricks().length} brick(s) — press play to test` : '')
   const cw=document.getElementById('canvas-wrap'); if(cw) cw.classList.toggle('editing', editingLevel)
   const so=document.getElementById('spawn-only'); if(so) so.style.display = brickSource==='level'?'none':'block'
-  const ov=document.getElementById('overlay'); if(ov) ov.textContent = editingLevel ? 'Click empty space to place a brick · click a brick to edit · drag to move' : 'impact speed → MIDI velocity'
+  const sb2=document.getElementById('level-spawn-btn'); if(sb2){ sb2.classList.toggle('on', spawnSetMode); sb2.style.display = brickSource==='level'?'block':'none' }
+  const ov=document.getElementById('overlay')
+  if(ov) ov.textContent = spawnSetMode ? 'Click to set ball spawn, then drag to aim direction'
+    : editingLevel ? 'Click empty space to place a brick · click a brick to edit · drag to move' : 'impact speed → MIDI velocity'
 }
 function setEditingLevel(on){
   editingLevel=on
   if(on){ brickSource='level'; if(playing){ playing=false; juceSetPlaying(false) } refreshEditBricks() }
-  else { selectedBrick=null; cachedKey='' }
+  else { selectedBrick=null; spawnSetMode=false; cachedKey=''; syncConfig(true); juceReset() }
   syncConfig(true); updateLevelUI()
 }
 function hitTestBrick(b,px,py){
@@ -1399,7 +1418,9 @@ document.getElementById('level-edit-btn').addEventListener('click',()=>setEditin
 // ── Levels: canvas placement / drag / edit ──
 canvas.addEventListener('mousedown',e=>{
   if(!editingLevel) return
-  const px=e.offsetX, py=e.offsetY, hit=brickAt(px,py)
+  const px=e.offsetX, py=e.offsetY
+  if(spawnSetMode){ const L=levels[activeLevel]; L.spawnX=px; L.spawnY=py; L.hasSpawn=true; levelDrag={spawnAim:true}; bumpLevel(); return }
+  const hit=brickAt(px,py)
   if(hit){ selectedBrick=hit; levelDrag={brick:hit, dx:px-hit.x, dy:py-hit.y, moved:false} }
   else {
     const b={id:nextLevelBrickId++, x:px, y:py, note:levelBrush.note, color:levelBrush.color, velLock:levelBrush.velLock||0, durability:levelBrush.durability,
@@ -1410,10 +1431,12 @@ canvas.addEventListener('mousedown',e=>{
 })
 canvas.addEventListener('mousemove',e=>{
   if(!editingLevel||!levelDrag) return
+  if(levelDrag.spawnAim){ const L=levels[activeLevel]; L.spawnAngle=Math.atan2(e.offsetY-(L.spawnY||0), e.offsetX-(L.spawnX||0)); bumpLevel(); return }
   levelDrag.brick.x=e.offsetX-levelDrag.dx; levelDrag.brick.y=e.offsetY-levelDrag.dy; levelDrag.moved=true
   bumpLevel(); refreshEditBricks()
 })
-function endLevelDrag(){ if(!levelDrag) return; const d=levelDrag; levelDrag=null; if(!d.moved) openEditor(d.brick,'level') }
+function endLevelDrag(){ if(!levelDrag) return; const d=levelDrag; levelDrag=null; if(d.spawnAim){ spawnSetMode=false; updateLevelUI(); return } if(!d.moved) openEditor(d.brick,'level') }
+document.getElementById('level-spawn-btn').addEventListener('click',()=>{ if(!editingLevel)setEditingLevel(true); spawnSetMode=true; updateLevelUI() })
 canvas.addEventListener('mouseup',endLevelDrag)
 canvas.addEventListener('mouseleave',()=>{ if(levelDrag){ levelDrag=null } })
 updateLevelUI()
