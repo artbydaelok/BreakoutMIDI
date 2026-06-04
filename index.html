@@ -243,6 +243,9 @@
       <div class="knob-row"><label>Particles</label><div style="flex:2"><input type="checkbox" id="fx-particles" checked style="width:14px;height:14px;accent-color:#4a6fa5;cursor:pointer"></div></div>
       <div class="knob-row"><label>Ball Squash</label><div style="flex:2"><input type="checkbox" id="fx-squash" checked style="width:14px;height:14px;accent-color:#4a6fa5;cursor:pointer"></div></div>
       <div class="knob-row"><label>Reload Shake</label><div style="flex:2"><input type="checkbox" id="fx-shake" checked style="width:14px;height:14px;accent-color:#4a6fa5;cursor:pointer"></div></div>
+      <div class="knob-row"><label>Glow</label><div style="flex:2"><input type="checkbox" id="fx-glow" checked style="width:14px;height:14px;accent-color:#4a6fa5;cursor:pointer"></div></div>
+      <div class="knob-row"><label>Note Labels</label><div style="flex:2"><input type="checkbox" id="fx-labels" checked style="width:14px;height:14px;accent-color:#4a6fa5;cursor:pointer"></div></div>
+      <div class="knob-row"><label>Show FPS</label><div style="flex:2"><input type="checkbox" id="fx-fps" style="width:14px;height:14px;accent-color:#4a6fa5;cursor:pointer"></div></div>
       <div class="knob-row"><label>Background</label><div style="flex:2"><input type="checkbox" id="fx-shader" style="width:14px;height:14px;accent-color:#7a5aa5;cursor:pointer"></div></div>
       <div id="fx-shader-params" style="display:none">
         <div class="knob-row"><label>Speed</label><input type="range" id="fx-sh-speed" min="0" max="2" step="0.05" value="0.5"><span class="val" id="fx-sh-speed-val">0.5</span></div>
@@ -701,9 +704,10 @@ function render() {
   if(shakeMag>0.1){ shx=(Math.random()-0.5)*shakeMag*2; shy=(Math.random()-0.5)*shakeMag*2; shakeMag*=0.86 } else shakeMag=0
   ctx.save(); ctx.translate(shx,shy)
 
-  ctx.strokeStyle='#1a1a1a';ctx.lineWidth=1
-  for(let x=0;x<canvas.width;x+=40){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,canvas.height);ctx.stroke()}
-  for(let y=0;y<canvas.height;y+=40){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(canvas.width,y);ctx.stroke()}
+  ctx.strokeStyle='#1a1a1a';ctx.lineWidth=1;ctx.beginPath()
+  for(let x=0;x<canvas.width;x+=40){ctx.moveTo(x,0);ctx.lineTo(x,canvas.height)}
+  for(let y=0;y<canvas.height;y+=40){ctx.moveTo(0,y);ctx.lineTo(canvas.width,y)}
+  ctx.stroke()
   const edgeDefs=[
     {s:edgeSlots.top,fn:()=>ctx.fillRect(0,0,canvas.width,3)},
     {s:edgeSlots.right,fn:()=>ctx.fillRect(canvas.width-3,0,3,canvas.height)},
@@ -716,10 +720,11 @@ function render() {
     const col=beh>0?'#ff4a4a':s.color
     ctx.globalAlpha=beh>0?.6:.35;ctx.fillStyle=col;ctx.shadowColor=col;ctx.shadowBlur=beh>0?14:10;fn();ctx.shadowBlur=0;ctx.globalAlpha=1
   }
+  const glow=vfx.glow
   for(const b of bricks){
     ctx.globalAlpha=b.alive?1:b.flash/12
-    if(b.flash>0&&!b.alive){ctx.fillStyle='#fff';ctx.shadowColor='#fff';ctx.shadowBlur=20}
-    else{ctx.fillStyle=b.slot.color+'33';ctx.shadowColor=b.slot.color;ctx.shadowBlur=8}
+    if(b.flash>0&&!b.alive){ctx.fillStyle='#fff';if(glow){ctx.shadowColor='#fff';ctx.shadowBlur=20}}
+    else{ctx.fillStyle=b.slot.color+'33';if(glow){ctx.shadowColor=b.slot.color;ctx.shadowBlur=8}}
 
     // shape fill
     ctx.beginPath()
@@ -776,23 +781,29 @@ function render() {
         ctx.restore()
       }
 
-      ctx.fillStyle=b.slot.color;ctx.font='10px SF Mono,monospace';ctx.textAlign='center';ctx.textBaseline='middle'
-      ctx.fillText(midiToName(b.slot.note), bcx, bcy)
+      if(vfx.labels){
+        ctx.fillStyle=b.slot.color;ctx.font='10px SF Mono,monospace';ctx.textAlign='center';ctx.textBaseline='middle'
+        ctx.fillText(midiToName(b.slot.note), bcx, bcy)
+      }
     }
     ctx.globalAlpha=1
   }
+  const _now=performance.now(), _span=Math.max(1,_tCur-_tPrev), _f=Math.max(0,Math.min(1.0,(_now-_tCur)/_span))
   for(const ball of balls){
+    const fx=ball.fx||{squash:0,nx:1,ny:0,px:ball.x,py:ball.y,x:ball.x,y:ball.y}
+    let bx, by
+    if(Math.hypot(fx.x-fx.px,fx.y-fx.py)>canvas.width/3){ bx=fx.x; by=fx.y }   // snap on respawn/teleport
+    else { bx=fx.px+(fx.x-fx.px)*_f; by=fx.py+(fx.y-fx.py)*_f }                 // interpolate between snapshots
     for(let i=0;i<ball.trail.length;i++){
       const t=ball.trail[i],a=(i/ball.trail.length)*.35
       ctx.beginPath();ctx.arc(t.x,t.y,ball.r*.5*(i/ball.trail.length),0,Math.PI*2)
       ctx.fillStyle=`rgba(255,255,255,${a})`;ctx.fill()
     }
-    const fx=ball.fx||{squash:0,nx:1,ny:0}
     if(fx.squash>0.004) fx.squash*=0.8; else fx.squash=0
     const sq=vfx.squash?(fx.squash||0):0
-    ctx.save(); ctx.translate(ball.x,ball.y); ctx.rotate(Math.atan2(fx.ny,fx.nx)); ctx.scale(1-0.55*sq, 1+0.4*sq)
+    ctx.save(); ctx.translate(bx,by); ctx.rotate(Math.atan2(fx.ny,fx.nx)); ctx.scale(1-0.55*sq, 1+0.4*sq)
     ctx.beginPath();ctx.arc(0,0,ball.r,0,Math.PI*2)
-    ctx.fillStyle='#fff';ctx.shadowColor='#88aaff';ctx.shadowBlur=16;ctx.fill();ctx.shadowBlur=0
+    ctx.fillStyle='#fff'; if(vfx.glow){ctx.shadowColor='#88aaff';ctx.shadowBlur=16} ctx.fill();ctx.shadowBlur=0
     ctx.restore()
   }
 
@@ -852,6 +863,8 @@ function render() {
   ctx.globalAlpha=1
 
   ctx.restore() // end screen-shake transform
+
+  if(vfx.fps){ ctx.fillStyle='#5f6'; ctx.font='11px monospace'; ctx.textAlign='left'; ctx.textBaseline='top'; ctx.fillText(curFPS+' fps', 8, 8) }
 }
 
 // Web Worker ticker — Chrome doesn't throttle workers in background tabs
@@ -861,6 +874,9 @@ ticker.onmessage = e => update(e.data)
 
 let _shaderLast=0
 function renderLoop(ts){
+  const _n=ts||performance.now()
+  if(_fpsLast){ _fpsAcc+=_n-_fpsLast; _fpsN++; if(_fpsAcc>=500){ curFPS=Math.round(1000*_fpsN/_fpsAcc); _fpsAcc=0; _fpsN=0 } }
+  _fpsLast=_n
   if(typeof pluginMode!=='undefined' && pluginMode) juceInvoke('setMouse', pluginMouse.x, pluginMouse.y, pluginMouse.active)
   if(typeof vfx!=='undefined' && vfx.shader && typeof glOk!=='undefined' && glOk){
     const now=ts||0
@@ -975,7 +991,8 @@ const pluginMode = !!juceBackend
 let pluginBallTrails = []
 // ── Juice: particles, screen shake, per-ball squash, background shader ──
 let particles=[], shakeMag=0, ballFx=[]
-let vfx={ particles:true, squash:true, shake:true, shader:false, shSpeed:0.5, shScale:2.5, shHue:0.60, shIntensity:0.45, shMirror:true }
+let vfx={ particles:true, squash:true, shake:true, glow:true, labels:true, fps:false, shader:false, shSpeed:0.5, shScale:2.5, shHue:0.60, shIntensity:0.45, shMirror:true }
+let _tPrev=0,_tCur=0,curFPS=0,_fpsAcc=0,_fpsN=0,_fpsLast=0
 function randomPointInBrick(b){
   const sh=b.shape||'rect'
   if(sh==='circle'){ const a=Math.random()*Math.PI*2, rr=Math.sqrt(Math.random())*(b.r||10); return {x:b.cx+Math.cos(a)*rr, y:b.cy+Math.sin(a)*rr} }
@@ -1126,12 +1143,13 @@ if(juceBackend){
       bricks = cachedBricks
     }
     const ba = s.balls||[], nball=(ba.length/4)|0, nballs=[], W=canvas.width, H=canvas.height
+    _tPrev=_tCur; _tCur=performance.now()   // interpolation clock
     for(let i=0;i<nball;i++){
       const x=ba[i*4], y=ba[i*4+1], vx=ba[i*4+2], vy=ba[i*4+3]
       let tr = pluginBallTrails[i] || []
       tr.push({x,y}); if(tr.length>18) tr.shift()
       pluginBallTrails[i]=tr
-      let fx = ballFx[i] || {squash:0,nx:1,ny:0,pvx:vx,pvy:vy}
+      let fx = ballFx[i] || {squash:0,nx:1,ny:0,pvx:vx,pvy:vy,px:x,py:y,x:x,y:y}
       const sp=Math.hypot(vx,vy), psp=Math.hypot(fx.pvx,fx.pvy)
       if(sp>0.01 && psp>0.01){
         const dot=(vx*fx.pvx+vy*fx.pvy)/(sp*psp)
@@ -1140,7 +1158,9 @@ if(juceBackend){
           fx.squash=Math.min(1,(1-dot)); fx.nx=ix/il; fx.ny=iy/il
         }
       }
-      fx.pvx=vx; fx.pvy=vy; ballFx[i]=fx
+      fx.pvx=vx; fx.pvy=vy
+      fx.px=fx.x; fx.py=fx.y; fx.x=x; fx.y=y   // shift snapshot for interpolation
+      ballFx[i]=fx
       nballs.push({x,y,vx,vy,r:BALL_R,trail:tr,fx})
     }
     pluginBallTrails.length = nball; ballFx.length = nball
@@ -1593,6 +1613,7 @@ function drawShader(dt){ if(!glOk)return; shaderTime+=dt*vfx.shSpeed; const gl=g
 function updateFxUI(){
   const setC=(id,v)=>{const e=document.getElementById(id);if(e)e.checked=v}
   setC('fx-particles',vfx.particles); setC('fx-squash',vfx.squash); setC('fx-shake',vfx.shake); setC('fx-shader',vfx.shader)
+  setC('fx-glow',vfx.glow); setC('fx-labels',vfx.labels); setC('fx-fps',vfx.fps)
   const sr=(id,v,fmt)=>{const e=document.getElementById(id);if(e)e.value=v;const ve=document.getElementById(id+'-val');if(ve)ve.textContent=fmt?fmt(v):v}
   sr('fx-sh-speed',vfx.shSpeed); sr('fx-sh-scale',vfx.shScale); sr('fx-sh-hue',vfx.shHue,v=>(+v).toFixed(2)); sr('fx-sh-intensity',vfx.shIntensity,v=>(+v).toFixed(2))
   const m=document.getElementById('fx-sh-mirror'); if(m)m.checked=vfx.shMirror
@@ -1600,7 +1621,7 @@ function updateFxUI(){
   const cv=document.getElementById('bg-shader'); if(cv)cv.style.display=vfx.shader?'block':'none'
   if(vfx.shader) resizeShader()
 }
-;['particles','squash','shake','shader'].forEach(k=>{ const e=document.getElementById('fx-'+k); if(e)e.addEventListener('change',ev=>{ vfx[k]=ev.target.checked; updateFxUI() }) })
+;['particles','squash','shake','glow','labels','fps','shader'].forEach(k=>{ const e=document.getElementById('fx-'+k); if(e)e.addEventListener('change',ev=>{ vfx[k]=ev.target.checked; updateFxUI() }) })
 ;(()=>{ const m=document.getElementById('fx-sh-mirror'); if(m)m.addEventListener('change',ev=>{ vfx.shMirror=ev.target.checked }) })()
 function wireFxRange(id,key,fmt){ const e=document.getElementById(id),ve=document.getElementById(id+'-val'); if(!e)return; e.addEventListener('input',()=>{ vfx[key]=parseFloat(e.value); if(ve)ve.textContent=fmt?fmt(e.value):e.value }) }
 wireFxRange('fx-sh-speed','shSpeed'); wireFxRange('fx-sh-scale','shScale'); wireFxRange('fx-sh-hue','shHue',v=>(+v).toFixed(2)); wireFxRange('fx-sh-intensity','shIntensity',v=>(+v).toFixed(2))
